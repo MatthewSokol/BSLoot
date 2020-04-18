@@ -1,0 +1,33 @@
+## Interface:11303
+## Title: BS Loot
+## Author: Murach
+## Version: 0.0.4-alpha
+## X-Website: https://www.bloodseraphim.com
+## Notes: Handles the loot system of Blood Seraphim.
+## SavedVariables: BSLootDB, EPGPTable, ItemGPCost, EPGPCache, CharRoleDB, SyncEvents, Baseline, EPValues, BisMatrix, BossKillCounter, RaidHistory, EventsToProcessQueue
+
+Libs\libs.xml
+Locales\locales.xml
+
+BSLoot-core.lua
+
+#Modules\autoroll.lua
+Modules\browser.lua
+Modules\io.lua
+Modules\logs.lua
+Modules\masterlooter.lua
+Modules\prices.lua
+Modules\standby.lua
+Modules\sync.lua
+Modules\standings.lua
+Modules\requiredMods.lua
+Modules\wItemRoll.lua
+Modules\wBulkEvents.lua
+Modules\wBulkItems.lua
+Modules\wBulkGp.lua
+Modules\wBulkEp.lua
+Modules\wBulkChars.lua
+Modules\wRosterDetails.lua
+Modules\wBisMatrix.lua
+Modules\baseline.lua
+
