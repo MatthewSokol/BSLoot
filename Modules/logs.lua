@@ -14,8 +14,8 @@ local currentSort = 2
 function bsloot_logs:OnEnable()
   local container = GUI:Create("Window")
   container:SetTitle(L["BSLoot Events"])
-  local WINDOW_WIDTH = 680
-  local WINDOW_HEIGHT = 400
+  local WINDOW_WIDTH = 500
+  local WINDOW_HEIGHT = 480
   container:SetWidth(WINDOW_WIDTH)
   container:SetHeight(WINDOW_HEIGHT)
   container:EnableResize(false)
@@ -23,12 +23,12 @@ function bsloot_logs:OnEnable()
   container:Hide()
   self._container = container
   local headers = {
-    {["name"]=C:Orange(L["Event Type"]),["width"]=100,["sort"]=ST.SORT_DSC}, --type
-    {["name"]=C:Orange(L["Epoch Sec"]),["width"]=100,["comparesort"]=st_sorter_numeric,["sortnext"]=1,["sort"]=ST.SORT_DSC}, --timestamp
+    {["name"]=C:Orange(L["Event Type"]),["width"]=80,["sort"]=ST.SORT_DSC}, --type
+    {["name"]=C:Orange(L["Date/Time"]),["width"]=120,["comparesort"]=st_sorter_numeric,["sortnext"]=1,["sort"]=ST.SORT_DSC}, --timestamp
     {["name"]=C:Orange(L["Event Id"]),["width"]=250}, --id
   }
   self._logs_table = ST:CreateST(headers,15,nil,colorHighlight,container.frame) -- cols, numRows, rowHeight, highlight, parent
-  self._logs_table.frame:SetPoint("TOPRIGHT",self._container.frame,"TOPRIGHT", -10, -40)
+  self._logs_table.frame:SetPoint("BOTTOMLEFT",self._container.frame,"BOTTOMLEFT", 10, 10)
   self._logs_table:EnableSelection(true)
   self._logs_table:RegisterEvents({
     ["OnClick"] = function(rowFrame, cellFrame, data, cols, row, realrow, column, table, button, ...)
@@ -38,8 +38,7 @@ function bsloot_logs:OnEnable()
         local eventString = bsloot:tableToString(event)
         self._eventDataBox:SetText(eventString)
         
-        local timestamp = C_DateAndTime.GetDateFromEpoch(event.epochSeconds * 1000 * 1000)
-        self._timestampLabel:SetText("Timestamp: " .. bsloot:tableToString(timestamp))
+        self._timestampLabel:SetText("Timestamp: " .. bsloot:getDateTimeString(event.epochSeconds))
         return false
     end,
   })
@@ -59,13 +58,13 @@ function bsloot_logs:OnEnable()
 
   local timestampLabel = GUI:Create("Label")
   timestampLabel:SetText("Select an Event")
-  timestampLabel:SetWidth(150)
+  timestampLabel:SetRelativeWidth(1)
   container:AddChild(timestampLabel)
   self._timestampLabel = timestampLabel
 
   local eventDataBox = GUI:Create("MultiLineEditBox")
-  eventDataBox:SetWidth(WINDOW_WIDTH)
-  eventDataBox:SetHeight(260)
+  eventDataBox:SetRelativeWidth(1)
+  eventDataBox:SetHeight(360)
   eventDataBox:SetLabel(L["Event Details"])
   eventDataBox:SetDisabled(true)
   eventDataBox:DisableButton(true)
@@ -101,14 +100,13 @@ function bsloot_logs:Show()
 end
 
 function bsloot_logs:Refresh()
---need to get the set of players somehow
---if raid only use CURRENT calcs (alt penalties etc)
+
   table.wipe(data)
 
   for k,v in pairs(SyncEvents) do
     table.insert(data,{["cols"]={
         {["value"]=v.type,},
-        {["value"]=v.epochSeconds,},
+        {["value"]=bsloot:getDateTimeString(v.epochSeconds),},
         {["value"]=k,},
     }})
   end

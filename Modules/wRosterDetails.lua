@@ -96,13 +96,13 @@ function bsloot_rosterdetails:setupRosterWindow()
     local selected = self._rosterdetails_table:GetSelection()
     if(selected and selected ~= nil and selected > 0) then
       local selectedRow = self._rosterdetails_table:GetRow(selected)
-      bsloot:debugPrint("Selected row: "..bsloot:tableToString(selectedRow), 7)
+      bsloot:debugPrint("Selected row: "..bsloot:tableToString(selectedRow), {logicOp="AND", values={bsloot.statics.LOGS.DEV, bsloot.statics.LOGS.ROSTER}})
       bsloot_rosterdetails.selectedName = selectedRow.cols[1].value
       bsloot_rosterdetails.selectedClass = selectedRow.cols[2].value
       bsloot_rosterdetails.selectedRole = selectedRow.cols[3].value
       bsloot_rosterdetails:populateRoleSetter(bsloot_rosterdetails.selectedName, bsloot_rosterdetails.selectedClass, bsloot_rosterdetails.selectedRole)
     else
-      bsloot:debugPrint("Select a player", 1)
+      bsloot:debugPrint("Select a player", bsloot.statics.LOGS.ROSTER)
     end
   end)
   if(bsloot:isAdmin()) then

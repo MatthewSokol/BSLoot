@@ -17,9 +17,27 @@ local locsorted = {"_AUTO_ROLL", "_AUTO_PASS", "_NO_AUTO", "ANY","INVTYPE_HEAD",
 
 local questionblue = CreateAtlasMarkup("QuestRepeatableTurnin")
 
-local function st_sorter_numeric(st,rowa,rowb,col)
-
+local function st_sorter_itemName(st,rowa,rowb,col)
+  local cella = st.data[rowa].cols[col].value
+  local cellb = st.data[rowb].cols[col].value
+  local sort = st.cols[col].sort or st.cols[col].defaultsort
+  
+  if cella == cellb then
+    local sortnext = st.cols[col].sortnext
+    if sortnext then
+      return st.data[rowa].cols[sortnext].value < st.data[rowb].cols[sortnext].value
+    end
+  else
+    local itemNameA = GetItemInfo(cella)
+    local itemNameB = GetItemInfo(cellb)
+    if sort == ST.SORT_DSC then
+      return itemNameA > itemNameB
+    else
+      return itemNameA < itemNameB
+    end
+  end
 end
+
 local favmap = bsloot._favmap
 local menu_close = function()
   if bsloot_browser._ddmenu then
@@ -132,7 +150,7 @@ function bsloot_browser:OnEnable()
   container:Hide()
   self._container = container
   local headers = {
-    {["name"]=C:Orange(_G.ITEMS),["width"]=150}, --name
+    {["name"]=C:Orange(_G.ITEMS),["width"]=150,["comparesort"]=st_sorter_itemName}, --name
     {["name"]=C:Orange(L["Item Type"]),["width"]=80}, --type
     {["name"]=C:Orange(L["Base GP"]),["width"]=80}, --ms_gp
     {["name"]=C:Orange(L["Raid"]),["width"]=60,}, --raid
@@ -282,7 +300,7 @@ function bsloot_browser:Refresh()
         end)
         
       else
-        bsloot:debugPrint("No entry for AutoRoll ItemId: "..id, 2)
+        bsloot:debugPrint("No entry for AutoRoll ItemId: "..id, bsloot.statics.LOGS.FAVORITES)
       end
     end
   elseif slotvalue == "_AUTO_PASS" then
@@ -304,7 +322,7 @@ function bsloot_browser:Refresh()
         end)
         
       else
-        bsloot:debugPrint("No entry for AutoPass ItemId: "..id, 2)
+        bsloot:debugPrint("No entry for AutoPass ItemId: "..id, bsloot.statics.LOGS.FAVORITES)
       end
     end
   elseif slotvalue == "_NO_AUTO" then
@@ -385,25 +403,29 @@ function bsloot_browser:ReInit()
 
   local count = 0
   local epGpSummary = bsloot:getEpGpSummary(bsloot._playerName)
+
   for _,info in pairs(ItemGPCost) do
     local raid = info.raid
     if(not raid or raid == nil) then raid = "Unknown" end
     local itemId, itemType, itemSubType, itemEquipLoc, icon, itemClassID, itemSubClassID = GetItemInfoInstant(info.link)
+    
     bsloot_browser:autoDetectAutoPass(info.link, itemId, epGpSummary)
-    local price, basePrice = bsloot_prices:GetPrice(itemId,bsloot._playerName)
-    if not itemEquipLoc or itemEquipLoc == nil or itemEquipLoc == "" then itemEquipLoc = "Unknown" end
-    if itemEquipLoc == "INVTYPE_ROBE" then itemEquipLoc = "INVTYPE_CHEST" end
-    data[itemEquipLoc] = data[itemEquipLoc] or {}
-    table.insert(data[itemEquipLoc],{itemId,price,basePrice,raid})
-    local equipLocDesc = _G[itemEquipLoc]
-    if itemEquipLoc == "INVTYPE_SHIELD" then equipLocDesc = _G["SHIELDSLOT"] end
-    if itemEquipLoc == "MISC" then equipLocDesc = L["Miscellaneous"] end
-    if itemEquipLoc == "Unknown" then equipLocDesc = L["Unknown"] end
-    if itemEquipLoc == "INVTYPE_RANGEDRIGHT" then equipLocDesc = _G["INVTYPE_RANGED"].."2" end
-    slotfilterOptions[itemEquipLoc] = equipLocDesc
-    count = count+1
+    pcall(function()
+      local price, basePrice = bsloot_prices:GetPrice(itemId,bsloot._playerName)
+      if not itemEquipLoc or itemEquipLoc == nil or itemEquipLoc == "" then itemEquipLoc = "Unknown" end
+      if itemEquipLoc == "INVTYPE_ROBE" then itemEquipLoc = "INVTYPE_CHEST" end
+      data[itemEquipLoc] = data[itemEquipLoc] or {}
+      table.insert(data[itemEquipLoc],{itemId,price,basePrice,raid})
+      local equipLocDesc = _G[itemEquipLoc]
+      if itemEquipLoc == "INVTYPE_SHIELD" then equipLocDesc = _G["SHIELDSLOT"] end
+      if itemEquipLoc == "MISC" then equipLocDesc = L["Miscellaneous"] end
+      if itemEquipLoc == "Unknown" then equipLocDesc = L["Unknown"] end
+      if itemEquipLoc == "INVTYPE_RANGEDRIGHT" then equipLocDesc = _G["INVTYPE_RANGED"].."2" end
+      slotfilterOptions[itemEquipLoc] = equipLocDesc
+      count = count+1
+    end)
   end
-  bsloot:debugPrint("Loaded "..count.." items into the browser",2)
+  bsloot:debugPrint("Loaded "..count.." items into the browser", bsloot.statics.LOGS.FAVORITES)
   for i=#(locsorted),1,-1 do
     local loc = locsorted[i]
     if loc ~= "_AUTO_ROLL" and loc ~= "_AUTO_PASS" and loc ~= "_NO_AUTO" and loc ~= "ANY" and slotfilterOptions[loc]==nil then
@@ -414,9 +436,14 @@ end
 
 function bsloot_browser:autoDetectAutoPass(itemLink, itemId, epGpSummary)
   if(not autoPassItems[itemId] or autoPassItems[itemId] == nil or not autoRollItems[itemId] or autoRollItems[itemId] == nil) then
-    local rollType, rollMods, effectivePr = bsloot:getRollType(bsloot._playerName, itemLink, epGpSummary.PR, epGpSummary.isMain)
-    if(rollType == -3) then
-      autoPassItems[itemId]=1
+    local success, rollTypeOrErr = pcall(function()
+      return bsloot:getRollType(bsloot._playerName, itemLink, epGpSummary.PR, epGpSummary.isMain)
+    end)
+    if(success) then
+      if(rollTypeOrErr == -3) then
+        autoPassItems[itemId]=1
+      else 
+      end
     end
   end
 end

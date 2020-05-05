@@ -123,11 +123,12 @@ Results will print here when done.]]
   L["New raid progress"] = true
   L[", offspec price %"] = true
   L["New offspec price %"] = true
+  L["Starting Raid: %s"] = true
+  L["Ending Raid: %s (raid event ID: %s)"] = true
   L[", decay %"] = true
   L["New decay %"] = true
   L[" settings accepted from %s"] = true
-  L["Giving %d ep for %s"] = true
-  L["Giving %d ep to %s for %s"] = true
+  L["Giving %d EP to %s for %s"] = true
   L["You aren't in a raid dummy"] = true
   L["Giving %d ep to active standby"] = true
   L["Giving %d ep to %s%s."] = true
@@ -141,7 +142,7 @@ Results will print here when done.]]
   L["All EP and GP has been reset to 0/%d."] = true
   L["You now have: %d EP %d GP |cffffff00%.03f|r|cffff7f00PR|r."] = true
   L["Close to EPGP Cap. Next Decay will change your |cffff7f00PR|r by |cffff0000%.4g|r."] = true
-  L["|cffff7f00Click|r to toggle Standings."] = true
+  L["|cffff7f00Click|r to view Standings."] = true
   L["Account EPs to %s."] = true
   L["Account GPs to %s."] = true
   L["BSLoot options"] = true
@@ -228,6 +229,7 @@ Results will print here when done.]]
   L["Unassigned"] = true
   L["Admin Options"] = true
   L["Member Options"] = true
+  L["Options"] = true
   L["Hide from Minimap"] = true
   L["You are assigning %s %s to %s for %s."] = true
   L["You are assigning %s %s to %s."] = true
@@ -253,11 +255,11 @@ Results will print here when done.]]
   L["|cffffff00%s|r is trying to add %s to Standby but {%s} is missing from Alt's Officer Note."] = true
   L["|cffffff00%s|r is trying to add themselves to Standby as a Main but are marked as an Alt of %s in Officer Note."] = true
   L["Admin Actions"] = true
-  L["|cffff7f00Alt+Click|r to toggle Bids."] = true
-  L["|cffff7f00Shift+Click|r to toggle Loot."] = true
-  L["|cffff7f00Ctrl+Click|r to toggle Standby."] = true
-  L["|cffff7f00Ctrl+Alt+Click|r to toggle Alts."] = true
-  L["|cffff7f00Ctrl+Shift+Click|r to toggle Logs."] = true
+  L["|cffff7f00Alt+Click|r to view Bids."] = true
+  L["|cffff7f00Shift+Click|r to view Raid History."] = true
+  L["|cffff7f00Ctrl+Click|r to view Standby."] = true
+  L["|cffff7f00Ctrl+Alt+Click|r to view Alts."] = true
+  L["|cffff7f00Ctrl+Shift+Click|r to view Logs."] = true
   L["|cffff7f00Right Click|r for %s."] = true
   L["|cffff7f00Middle Click|r for %s"] = true
   L["Set Banker"] = true
@@ -276,8 +278,7 @@ Results will print here when done.]]
   L["Modifier Preview"] = true
   L["Right-click a row to add or remove a Favorite"] = true
   L["Show Favorites Table."] = true
-  L["|cffff7f00Shift+Alt+Click|r to toggle Loot Browser."] = true
-  L["|cffff7f00Alt+Click|r to toggle Loot Browser."] = true
+  L["|cffff7f00Shift+Alt+Click|r to view Loot Browser."] = true
   L["Bid Popup"] = true
   L["Show a Bid Popup in addition to chat links"] = true
   L["Bid Mainspec/Need"] = true
@@ -355,6 +356,24 @@ L["Required Mods"] = true
   L["Screenshot Bids on Announce"] = true
   L["Screenshot Bids when a winner is announced"] = true
   L["Bulk Import GP Values"] = true
+
+  --Raid history
+  L["Show Raid History"] = true
+  L["BSLoot Raid History"] = true
+  L["Date/Time"] = true
+  L["Raid Name"] = true
+  L["Host/ML"] = true
+  L["Raid Id"] = true
+  L["SubType"] = true
+  L["Reason"] = true
+  L["SubReason"] = true
+  
+
+  L["Close the roll window when you select pass"] = true
+  L["Close the roll window when you select pass(unless ML)"] = true
+  L["Close the roll window when you select need"] = true
+  L["Close the roll window when you select need(unless ML)"] = true
+
   --chat settings
   L["Chat Messages"] = true
   L["The below options are where you will broadcast messages when you are performing actions with BSLoot"] = true
@@ -410,10 +429,13 @@ L["Required Mods"] = true
   L["Event Id"] = true
   L["Rebuild from Event Log"] = true
   L["Event Details"] = true
+  L["Show Event Browser"] = true
+  L["Request all Event IDs from given player"] = true
 
   --bis browser
   L["Warrior Tank"] = true
   L["Warrior OT"] = true
+  L["Warrior MDPS"] = true
   L["Hunter RDPS"] = true
   L["Shaman Healer"] = true
   L["Shaman MDPS"] = true
@@ -427,4 +449,16 @@ L["Required Mods"] = true
   L["Priest RDPS"] = true
   L["Warlock RDPS"] = true
   L["Mage RDPS"] = true
+  
+  L["Raid Events"] = true
+  L["Dump Some Test Data"] = true
+  L["Required Mods"] = true
+  L["Query users for required mods"] = true
+  L["Roster"] = true
+  L["Show Guild roster Table"] = true
+  L["Charge for item"] = true
+  L["Charge for an item outside of normal loot flow"] = true
+  L["Refund an item"] = true
+  L["Refund an item outside of normal loot flow"] = true
+  L["Generate and print a uuid"] = true
   bsloot.L = L

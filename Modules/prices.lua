@@ -35,7 +35,7 @@ function bsloot_prices:GetPrice(item, charName, rollType)
           itemEquipLoc, itemIcon, itemSellPrice, itemClassID, itemSubClassID, bindType, expacID, itemSetID, 
           isCraftingReagent, itemId)
           price = (bsloot_prices:GetItemValue(itemLevel, itemRarity)^2) * 0.04 * bsloot_prices:GetItemValue(itemEquipLoc)
-          bsloot:debugPrint("Ad hoc price calc("..bsloot:tableToString(itemName).."): " .. bsloot:tableToString(itemLevel) .. ", ".. bsloot:tableToString(itemRarity) .. ", "..bsloot:tableToString(itemEquipLoc) ..", "..bsloot:tableToString(price), 6)
+          bsloot:debugPrint("Ad hoc price calc("..bsloot:tableToString(itemName).."): " .. bsloot:tableToString(itemLevel) .. ", ".. bsloot:tableToString(itemRarity) .. ", "..bsloot:tableToString(itemEquipLoc) ..", "..bsloot:tableToString(price), {logicOp="AND", values={bsloot.statics.LOGS.DEV, bsloot.statics.LOGS.PRICE}})
         end)
     end
   end
@@ -111,9 +111,8 @@ function bsloot_prices:GetItemValue(iSlot)
   elseif(iSlot == "INVTYPE_CLOAK") then
     slotVal = 0.55
   else
-      --bsloot:debugPrint("Ad hoc price calc("..itemName.."): " .. itemLevel .. ", ".. itemRarity .. ", "..itemEquipLoc ..", "..price, 3)
   end
-  -- bsloot:debugPrint("slot " .. iSlot .. " has mod value of ".. slotVal, 6)
+  -- bsloot:debugPrint("slot " .. iSlot .. " has mod value of ".. slotVal, {logicOp="AND", values={bsloot.statics.LOGS.DEV, bsloot.statics.LOGS.PRICE}})
   return slotVal
 --[[
 Off-hand	0.75

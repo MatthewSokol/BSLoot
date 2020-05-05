@@ -138,7 +138,12 @@ function bsloot_window_roll_present:OnEnable()
     needButton:SetAutoWidth(true)
     needButton:SetText(L["Need"])
     needButton:SetCallback("OnClick",function()
-    bsloot:broadcast("!need "..self._itemId, self.sender)
+    bsloot:broadcast("!need "..self._itemId, bsloot.statics.channel.WHISPER, self.sender)
+    pcall(function()
+      if(bsloot.db.char.rollWindowCloseOnNeed and not bsloot:isSourceOfTrue("loot")) then
+        bsloot_window_roll_present:Hide()
+      end
+    end)
   end)
   bigContainer:AddChild(needButton)
   self._needButton = needButton
@@ -147,7 +152,12 @@ function bsloot_window_roll_present:OnEnable()
     passButton:SetAutoWidth(true)
     passButton:SetText(L["Pass"])
     passButton:SetCallback("OnClick",function()
-    bsloot:broadcast("!pass "..self._itemId, self.sender)
+    bsloot:broadcast("!pass "..self._itemId, bsloot.statics.channel.WHISPER, self.sender)
+    pcall(function()
+      if(bsloot.db.char.rollWindowCloseOnPass and not bsloot:isSourceOfTrue("loot")) then
+        bsloot_window_roll_present:Hide()
+      end
+    end)
   end)
   bigContainer:AddChild(passButton)
 
@@ -168,7 +178,7 @@ function bsloot_window_roll_present:OnEnable()
         for _,roll in pairs(rollsByChar) do
           local effPr = tonumber(roll.effectivePr)
           if(highestRoll == nil or effPr > highestRoll) then
-            bsloot:debugPrint(roll.charName .. " beats current max bid of ".. bsloot:tableToString(highestRoll) .. " with " .. roll.effectivePr )
+            bsloot:debugPrint(roll.charName .. " beats current max bid of ".. bsloot:tableToString(highestRoll) .. " with " .. roll.effectivePr, bsloot.statics.LOGS.LOOT)
             winners = {}
             highestRoll = effPr
             table.insert(winners, roll.charName)
@@ -183,10 +193,12 @@ function bsloot_window_roll_present:OnEnable()
             local gpValue = bsloot_prices:GetPrice(self.item, winners[1])
             bsloot:SendChat("Winner for "..self.item.." is "..winners[1].." (".. gpValue.." GP)", bsloot.db.profile.chat.lootResult, winners);
             
-            local winnerMsg = "itemWinner "..winners[1].." "..self.item
-            bsloot:broadcast(winnerMsg, bsloot.test_mode_vars.channel)
+            local winnerMsg = "itemWinner "..winners[1].." "..self._itemId
+            bsloot:broadcast(winnerMsg, bsloot.statics.channel.RAID)
+            bsloot:chargeGpForItem(self._itemId, winners[1])
+
             bsloot_window_roll_present:TakeScreenShotThenDo(function()
-              bsloot:broadcast("clearLoot")
+              bsloot:broadcast("clearLoot", bsloot.statics.channel.RAID)
             end)
           else
             -- It's a tie
@@ -198,12 +210,13 @@ function bsloot_window_roll_present:OnEnable()
             end
             bsloot:SendChat("Winners for "..self.item.." are "..winnersList..". Roll for the tie", bsloot.db.profile.chat.lootResult, winners);
             self._resolveTieButton:SetDisabled(false)
+            bsloot_window_roll_present.announced = false
           end
         else
           --No rolls
           bsloot:SendChat("No rolls for "..self.item..", it will be sharded", bsloot.db.profile.chat.lootResult);
           bsloot_window_roll_present:TakeScreenShotThenDo(function()
-            bsloot:broadcast("clearLoot")
+            bsloot:broadcast("clearLoot", bsloot.statics.channel.RAID)
           end)
         end
 
@@ -219,21 +232,22 @@ function bsloot_window_roll_present:OnEnable()
   resolveTieButton:SetCallback("OnClick",function()
     
     if(bsloot_window_roll_present.announced) then
+      bsloot:warnPrint("Already announced", {logicOp="AND", values={bsloot.statics.LOGS.DEV, bsloot.statics.LOGS.LOOT}})
       return
     end
     bsloot_window_roll_present.announced = true
     local selected = self._standings_table:GetSelection()
     if(selected and selected ~= nil and selected > 0) then
       local selectedRow = self._standings_table:GetRow(selected)
-      bsloot:debugPrint("Selected row: "..bsloot:tableToString(selectedRow), 7)
+      bsloot:debugPrint("Selected row: "..bsloot:tableToString(selectedRow), {logicOp="AND", values={bsloot.statics.LOGS.DEV, bsloot.statics.LOGS.LOOT}})
       local winningName = selectedRow.cols[1].value
       local gpValue = bsloot_prices:GetPrice(self.item, winningName)
       bsloot:SendChat("Winner for "..self.item.." is "..winningName .." (".. gpValue.." GP)", bsloot.db.profile.chat.lootResult, winningName)
       bsloot:chargeGpForItem(self._itemId, winningName)
-      local winnerMsg = "itemWinner "..winningName.." "..self.item
-      bsloot:broadcast(winnerMsg, bsloot.test_mode_vars.channel)
+      local winnerMsg = "itemWinner "..winningName.." "..self._itemId
+      bsloot:broadcast(winnerMsg, bsloot.statics.channel.RAID)
       bsloot_window_roll_present:TakeScreenShotThenDo(function()
-        bsloot:broadcast("clearLoot")
+        bsloot:broadcast("clearLoot", bsloot.statics.channel.RAID)
       end)
     else
       message("You must select the row which has the winning roll")
@@ -265,84 +279,81 @@ function bsloot_window_roll_present:presentItem(sender, item, inEligibleRollers,
   bsloot:doWithItemInfo(item, function(itemName, itemLink, itemRarity, itemLevel, itemMinLevel, itemType, itemSubType, itemStackCount,
   itemEquipLoc, itemIcon, itemSellPrice, itemClassID, itemSubClassID, bindType, expacID, itemSetID, 
   isCraftingReagent, itemId)
-  bsloot:removePrint("DOING WITH INFO(item) ("..bsloot:tableToString(itemId)..")= "..bsloot:tableToString(itemName)..", "..bsloot:tableToString(itemLink)..", "..bsloot:tableToString(itemRarity)..", "..bsloot:tableToString(itemLevel)..", "..bsloot:tableToString(itemMinLevel)..", "..bsloot:tableToString(itemType)..", "..bsloot:tableToString(itemSubType)..", "..bsloot:tableToString(itemStackCount)..", "..bsloot:tableToString(itemEquipLoc)..", "..bsloot:tableToString(itemIcon)..", "..bsloot:tableToString(itemSellPrice)..", "..bsloot:tableToString(itemClassID)..", "..bsloot:tableToString(itemSubClassID)..", "..bsloot:tableToString(bindType)..", "..bsloot:tableToString(expacID)..", "..bsloot:tableToString(itemSetID)..", "..bsloot:tableToString(isCraftingReagent))
-  bsloot:removePrint("itemLink: "..bsloot:tableToString(itemLink))
-  self._itemScreenshotted = false
-  self.sender = sender
-  self.eligibleRollers = inEligibleRollers
-  self.item = itemLink
-  local tempItemId = GetItemInfoInstant(itemLink)
-  if(tempItemId ~= nil) then
-    self._itemId = tempItemId
-    if(rollType and rollType ~= nil and rollType == -3) then
-      self._needButton:SetDisabled(true)
-    else
-      self._needButton:SetDisabled(false)
-    end
-    if(self._itemLabel) then
-      self._itemLabel:SetText(self.item)
-      self._itemLabel:SetImage(itemIcon)
-      
-      self._itemLabel:SetCallback("OnEnter", function(widget)
-        GameTooltip:SetOwner(self._big_container.frame,"ANCHOR_TOP")
-        GameTooltip:SetHyperlink(itemLink)
-        GameTooltip:Show()
-      
-      end)
-      self._itemLabel:SetCallback("OnLeave", function(widget)
-        if GameTooltip:IsOwned(self._big_container.frame) then
-          GameTooltip_Hide()
-        end
-      end)
-      -- TODO implement see https://wow.gamepedia.com/ItemEquipLoc consider tokens, 2h vs 1h + oh, etc
-      -- local itemSlotId, _ = GetInventorySlotInfo(itemEquipLoc)
-      -- equpippedItem = GetInventoryItemLink("player", itemSlotId)
-      -- bsloot:doWithItemInfo(equpippedItem, function(itemName, itemLink, itemRarity, itemLevel, itemMinLevel, itemType, itemSubType, itemStackCount,
-      -- itemEquipLoc, itemIcon, itemSellPrice, itemClassID, itemSubClassID, bindType, expacID, itemSetID, 
-      -- isCraftingReagent, itemId)
-      -- bsloot:removePrint("Gear in slot is: "..equpippedItem..". "..equpippedItemName)
-      -- self._currentEquippedItemLabel:SetText("Currently Equipped: "..equpippedItemLink)
-      -- self._currentEquippedItemLabel:SetImage(equpippedItemIcon)
-      --   end)
-      
-      self._currentEquippedItemLabel:SetCallback("OnEnter", function(widget)
-        GameTooltip:SetOwner(self._big_container.frame,"ANCHOR_TOP")
-        GameTooltip:SetHyperlink(equpippedItemLink)
-        GameTooltip:Show()
-      
-      end)
-      self._currentEquippedItemLabel:SetCallback("OnLeave", function(widget)
-        if GameTooltip:IsOwned(self._big_container.frame) then
-          GameTooltip_Hide()
-        end
-      end)
-   
-      local gpValue, baseGpVal = bsloot_prices:GetPrice(self._itemId, bsloot._playerName)
-      self._itemGpLabel:SetText("Item GP (for you): " .. gpValue .. "\nItem GP (base value): "..baseGpVal)
-   
-      local epGpSummary =  bsloot:getEpGpSummary(bsloot._playerName)
-      self._playerEpLabel:SetText("Your EP: " .. epGpSummary.EP)
-      self._playerGpLabel:SetText("Your GP: " .. epGpSummary.GP)
-      self._playerPrLabel:SetText("Your Base PR: " .. epGpSummary.PR)
-   
-      self._previewPrLabel:SetText("Preview Base PR (if you win): " .. bsloot:calcPr(epGpSummary.EP, epGpSummary.GP+gpValue))
-   end
-  bsloot_window_roll_present:PopulateMissingRolls()
+    self._itemScreenshotted = false
+    self.sender = sender
+    self.eligibleRollers = inEligibleRollers
+    self.item = itemLink
+    local tempItemId = GetItemInfoInstant(itemLink)
+    if(tempItemId ~= nil) then
+      self._itemId = tempItemId
+      if(rollType and rollType ~= nil and rollType == -3) then
+        self._needButton:SetDisabled(true)
+      else
+        self._needButton:SetDisabled(false)
+      end
+      if(self._itemLabel) then
+        self._itemLabel:SetText(self.item)
+        self._itemLabel:SetImage(itemIcon)
+        
+        self._itemLabel:SetCallback("OnEnter", function(widget)
+          GameTooltip:SetOwner(self._big_container.frame,"ANCHOR_TOP")
+          GameTooltip:SetHyperlink(itemLink)
+          GameTooltip:Show()
+        
+        end)
+        self._itemLabel:SetCallback("OnLeave", function(widget)
+          if GameTooltip:IsOwned(self._big_container.frame) then
+            GameTooltip_Hide()
+          end
+        end)
+        -- TODO implement see https://wow.gamepedia.com/ItemEquipLoc consider tokens, 2h vs 1h + oh, etc
+        -- local itemSlotId, _ = GetInventorySlotInfo(itemEquipLoc)
+        -- equpippedItem = GetInventoryItemLink("player", itemSlotId)
+        -- bsloot:doWithItemInfo(equpippedItem, function(itemName, itemLink, itemRarity, itemLevel, itemMinLevel, itemType, itemSubType, itemStackCount,
+        -- itemEquipLoc, itemIcon, itemSellPrice, itemClassID, itemSubClassID, bindType, expacID, itemSetID, 
+        -- isCraftingReagent, itemId)
+        -- self._currentEquippedItemLabel:SetText("Currently Equipped: "..equpippedItemLink)
+        -- self._currentEquippedItemLabel:SetImage(equpippedItemIcon)
+        --   end)
+        
+        self._currentEquippedItemLabel:SetCallback("OnEnter", function(widget)
+          GameTooltip:SetOwner(self._big_container.frame,"ANCHOR_TOP")
+          GameTooltip:SetHyperlink(equpippedItemLink)
+          GameTooltip:Show()
+        
+        end)
+        self._currentEquippedItemLabel:SetCallback("OnLeave", function(widget)
+          if GameTooltip:IsOwned(self._big_container.frame) then
+            GameTooltip_Hide()
+          end
+        end)
+    
+        local gpValue, baseGpVal = bsloot_prices:GetPrice(self._itemId, bsloot._playerName)
+        self._itemGpLabel:SetText("Item GP (for you): " .. gpValue .. "\nItem GP (base value): "..baseGpVal)
+    
+        local epGpSummary =  bsloot:getEpGpSummary(bsloot._playerName)
+        self._playerEpLabel:SetText("Your EP: " .. epGpSummary.EP)
+        self._playerGpLabel:SetText("Your GP: " .. epGpSummary.GP)
+        self._playerPrLabel:SetText("Your Base PR: " .. epGpSummary.PR)
+    
+        self._previewPrLabel:SetText("Preview Base PR (if you win): " .. bsloot:calcPr(epGpSummary.EP, epGpSummary.GP+gpValue))
+      end
+      bsloot_window_roll_present:PopulateMissingRolls()
 
-  bsloot_window_roll_present:ResetRolls()
-  self._big_container.SetStatusText(itemLink)
+      bsloot_window_roll_present:ResetRolls()
+      self._big_container.SetStatusText(itemLink)
 
-  self._resolveTieButton:SetDisabled(true)
-  if(bsloot:isSourceOfTrue("loot")) then
-    self._announceButton:SetDisabled(false)
-  else
-    self._announceButton:SetDisabled(true)
-  end
-    if(shouldShow == nil or shouldShow) then
-      bsloot_window_roll_present:Show()
+      self._resolveTieButton:SetDisabled(true)
+      if(bsloot:isSourceOfTrue("loot")) then
+        self._announceButton:SetDisabled(false)
+      else
+        self._announceButton:SetDisabled(true)
+      end
+      if(shouldShow == nil or shouldShow) then
+        bsloot_window_roll_present:Show()
+      end
     end
-  end
-end)
+  end)
 
 end
 local missingRollsData = { }
@@ -369,9 +380,9 @@ function bsloot_window_roll_present:PopulateMissingRolls()
       table.insert(missingRollsData,{["cols"]={
         {["value"]=name,["color"]=color},
       }})
-      bsloot:debugPrint("Adding "..name.." as awaiting a roll", 7)
+      bsloot:debugPrint("Adding "..name.." as awaiting a roll", {logicOp="AND", values={bsloot.statics.LOGS.DEV, bsloot.statics.LOGS.LOOT}})
     else
-      bsloot:debugPrint(name.." has already rolled", 8)
+      bsloot:debugPrint(name.." has already rolled", {logicOp="AND", values={bsloot.statics.LOGS.DEV, bsloot.statics.LOGS.LOOT}})
     end
   end
 
@@ -416,8 +427,8 @@ function bsloot_window_roll_present:updateRolls(itemId, charName, ep, gp, pr, mo
 
     bsloot_window_roll_present:Refresh()
   else
-    bsloot:debugPrint("Unexpected item roll types: "..type(itemId).." vs "..type(self._itemId), 5)
-    bsloot:debugPrint("Unexpected item roll values: "..itemId.." vs "..bsloot:tableToString(self._itemId)..";", 5)
+    bsloot:debugPrint("Unexpected item roll types: "..type(itemId).." vs "..type(self._itemId), bsloot.statics.LOGS.LOOT)
+    bsloot:debugPrint("Unexpected item roll values: "..itemId.." vs "..bsloot:tableToString(self._itemId)..";", bsloot.statics.LOGS.LOOT)
   end
   --TODO what if bid received for wrong one
 end
@@ -435,8 +446,8 @@ function bsloot_window_roll_present:Show()
     end
     self:Refresh()
   else
-    bsloot:debugPrint("Attempt to view Item Rolls with no item prepared, requesting refresh", 1)
-    bsloot:broadcast("requestItemWindowRefresh")
+    bsloot:warnPrint("Attempt to view Item Rolls with no item prepared, requesting refresh", bsloot.statics.LOGS.LOOT)
+    bsloot:broadcast("requestItemWindowRefresh", bsloot.statics.channel.RAID)
   end
 end
 function bsloot_window_roll_present:TakeScreenShotThenDo(func)
@@ -486,7 +497,7 @@ rollsByChar = {}
 passesByChar = {}
 
 function bsloot_window_roll_present:Refresh()
-  bsloot:debugPrint("Refresshing roll tables", 8)
+  bsloot:debugPrint("Refresshing roll tables", {logicOp="AND", values={bsloot.statics.LOGS.DEV, bsloot.statics.LOGS.LOOT}})
   table.wipe(data)
   
   --Standings
@@ -496,14 +507,14 @@ function bsloot_window_roll_present:Refresh()
     {["name"]=C:Orange(L["ep"]:upper()),["width"]=75,["comparesort"]=st_sorter_numeric}, --ep
     {["name"]=C:Orange(L["gp"]:upper()),["width"]=75,["comparesort"]=st_sorter_numeric}, --gp
     {["name"]=C:Orange(L["pr"]:upper()),["width"]=75,["comparesort"]=st_sorter_numeric}, --pr
-    {["name"]=C:Orange(L["mod"]:upper()),["width"]=75,["comparesort"]=st_sorter_numeric}, --modifier
+    {["name"]=C:Orange(L["mod"]:upper()),["width"]=75}, --modifier
   }
   if(not self._standings_table) then
     self._standings_table = ST:CreateST(headers,5,nil,colorHighlight,self._standingsFrame.frame) -- cols, numRows, rowHeight, highlight, parent
     self._standings_table:EnableSelection(true)
   end
   for charName,roll in pairs(rollsByChar) do
-    bsloot:debugPrint("Adding entry for " .. charName .. "'s roll", 6)
+    bsloot:debugPrint("Adding entry for " .. charName .. "'s roll", {logicOp="AND", values={bsloot.statics.LOGS.DEV, bsloot.statics.LOGS.LOOT}})
     local ep = roll.ep
     local gp = roll.gp
     local pr = roll.pr
@@ -553,6 +564,11 @@ end
 function bsloot_window_roll_present:SendAsChat(toPerson) 
   local chatTo = {}
   chatTo.WHISPER = true
+  if(not self._itemId or self._itemId == nil) then
+    msg = "No Item to present bids for, sorry"
+    bsloot:SendChat(msg, chatTo, toPerson)
+    return
+  end
   local msg = ""
   local _, basePrice = bsloot_prices:GetPrice(self._itemId, bsloot._playerName)
   msg = "Item: " .. self.item .. ", baseGp: " .. basePrice

@@ -17,6 +17,7 @@ EPGPTable = {}
 if EPGPTable == nil then
     EPGPTable = {};
 end 
+bsloot.syncMinGuildRank = 2 --higher = lower rank, 0 is GM, based on rankIndex not rankIndex  --TODO make "trustedRank" configurable
 bsloot.test_mode_vars = 
 --[[{
   channel = "RAID",
@@ -26,14 +27,14 @@ bsloot.test_mode_vars =
 }
 bsloot.VARS = {
   basegp = 200,
-  minep = 4500,
+  minep = 10000,
   -- baseaward_ep = 100,
   decay = 0.1,
   -- max = 1000,
   timeout = 60,
   minlevel = 55,
   maxloglines = 500,
-  prefix = "BSLOOT",
+  prefix = "BSLOOT1",
   pricesystem = "BSLootFixed-1.0",
   bop = C:Red(L["BoP"]),
   boe = C:Yellow(L["BoE"]),
@@ -43,7 +44,7 @@ bsloot.VARS = {
   bankde = L["Bank-D/E"],
   unassigned = C:Red(L["Unassigned"]),
   prModPerBisPhase = 0.1,
-  prModAlt = 0.25,
+  prModAlt = 0.75,
 }
 bsloot._playerName = Ambiguate(GetUnitName("player"), "short")
 SyncEvents = SyncEvents or {}
@@ -86,6 +87,26 @@ bsloot.statics = {
     BONUS = "BONUS",
     ON_TIME = "OnTime",
     IRONMAN = "Ironman",
+  },
+  LOGS = {
+    DEFAULT = 1,
+    LOOT = 2,
+    SYNC = 4,
+    COMM = 8,
+    EPGP = 16,
+    ROSTER = 32,
+    EVENT = 64,
+    MODS = 128,
+    AUTODETECT = 256,
+    BULK = 512,
+    PRICE = 1024,
+    FAVORITES = 2048,
+    DEV = 4096,
+  },
+  channel = {
+    RAID = "RAID",
+    GUILD = "GUILD",
+    WHISPER = "WHISPER",
   },
 }
 do
@@ -138,82 +159,101 @@ local defaults = {
     },
     guildcache = {},
     chat = {
-      
+      verboseRaidEp = false,
       presentItemToRollOn = {
-        RAID = true,
+        RAID = false,
+        RAID_WARNING = true,
         GUILD = false,
         WIDEST = false,
       },
       bidResult = {
         RAID = true,
+        RAID_WARNING = false,
         GUILD = false,
         WIDEST = false,
         WHISPER = true,
       },
       bidAck = {
         RAID = false,
+        RAID_WARNING = false,
         GUILD = false,
         WIDEST = false,
         WHISPER = true,
       },
       bidDetails = {
         RAID = false,
+        RAID_WARNING = false,
         GUILD = false,
         WIDEST = false,
         WHISPER = true,
       },
       passResult = {
         RAID = false,
+        RAID_WARNING = false,
         GUILD = false,
         WIDEST = false,
         WHISPER = true,
       },
       passAck = {
         RAID = false,
+        RAID_WARNING = false,
         GUILD = false,
         WIDEST = false,
         WHISPER = false,
       },
       autoPassResult = {
         RAID = false,
+        RAID_WARNING = false,
         GUILD = false,
         WIDEST = false,
         WHISPER = true,
       },
       autoPassAck = {
         RAID = false,
+        RAID_WARNING = false,
         GUILD = false,
         WIDEST = false,
         WHISPER = false,
       },
       autoRollAck = {
         RAID = false,
+        RAID_WARNING = false,
         GUILD = false,
         WIDEST = false,
         WHISPER = false,
       },
       gpGrant = {
         RAID = false,
+        RAID_WARNING = false,
         GUILD = true,
         WIDEST = false,
         WHISPER = true,
       },
       epGrant = {
         RAID = false,
+        RAID_WARNING = false,
         GUILD = true,
         WIDEST = false,
         WHISPER = true,
       },
       raidEpGrant = {
-        RAID = true,
+        RAID = false,
+        RAID_WARNING = true,
         GUILD = false,
         WIDEST = false,
       },
       lootResult = {
-        RAID = true,
+        RAID = false,
+        RAID_WARNING = true,
         GUILD = false,
         WIDEST = false,
         WHISPER = true,
+      },
+      raidEvent = {
+        RAID = false,
+        RAID_WARNING = true,
+        GUILD = false,
+        WIDEST = false,
       },
     },
   },
@@ -224,6 +264,8 @@ local defaults = {
     standby = false,
     ssOnAnnounce = false,
     bidpopup = false,
+    rollWindowCloseOnNeed = false,
+    rollWindowCloseOnPass = true,
     logs = {},
     loot = {},
     autoRollItems = {},
@@ -246,8 +288,8 @@ local admincmd =
   },
   roster = {
     type = "execute",
-    name = L["Standings"],
-    desc = L["Show Standings Table."],
+    name = L["Roster"],
+    desc = L["Show Guild roster Table"],
     func = function()
       local roster = bsloot:GetModule(addonName.."_rosterdetails")
       if roster then
@@ -270,8 +312,8 @@ local admincmd =
   },
   mods = {
     type = "execute",
-    name = L["Bids"],
-    desc = L["Show Bids Window."],
+    name = L["Required Mods"],
+    desc = L["Query users for required mods"],
     func = function()
       bsloot_requiredmods:Show()
     end,
@@ -301,7 +343,6 @@ local admincmd =
     end,
     order = 3,      
   },    
-    
     check = {
       type = "input",
       name = L["Check Guild for data"],
@@ -310,7 +351,7 @@ local admincmd =
         if(bsloot:isItemLink(arg)) then
               bsloot:presentItemToRollOn(arg)
         else
-          bsloot:broadcast("check " .. arg, bsloot.test_mode_vars.channel)
+          bsloot:broadcast("check " .. arg, bsloot.statics.channel.RAID)
         end
       end,
       order = 11,
@@ -320,7 +361,7 @@ local admincmd =
       name = L["Force Clear everyone's Data"],
       desc = L["Force Clear everyone's Data"],
       func = function()
-        bsloot:broadcast("forceClear", "GUILD")
+        bsloot:broadcast("forceClear", bsloot.statics.channel.GUILD)
       end,
       order = 7,
     },
@@ -330,16 +371,7 @@ local admincmd =
       desc = L["Migrate a characters history to a new main"],
       set = function(info, msg)
         local args = bsloot:split(msg)
-        bsloot:changeMainChar(args[1], args[2])
-      end,
-      order = 7,
-    },
-    forceClear = {
-      type = "execute",
-      name = L["Force Clear everyone's Data"],
-      desc = L["Force Clear everyone's Data"],
-      func = function()
-        bsloot:broadcast("forceClear", "GUILD")
+        bsloot:changeMainChar(args[1], args[2], args[3], args[4])
       end,
       order = 7,
     },
@@ -348,8 +380,7 @@ local admincmd =
       name = L["Begin a Raid"],
       desc = L["Begin a Raid"],
       set = function(info, msg)
-        local args = bsloot:split(msg)
-        bsloot:startRaid(args[1])
+        bsloot:startRaid(msg)
       end,
       order = 10,
     },
@@ -358,32 +389,53 @@ local admincmd =
       name = L["End a Raid"],
       desc = L["End a Raid"],
       set = function(info, msg)
-        local args = bsloot:split(msg)
-        bsloot:endRaid(args[1])
+        bsloot:endRaid(msg)
       end,
       order = 10,
     },
     charge = {
       type = "input",
-      name = L["End a Raid"],
-      desc = L["End a Raid"],
+      name = L["Charge for item"],
+      desc = L["Charge for an item outside of normal loot flow"],
       set = function(info, msg)
         local args = bsloot:split(msg)
-        local itemId = GetItemInfoInstant(args[1])
-        local characterName = args[2]
-        bsloot:chargeGpForItem(itemId, characterName)
+        local characterName = args[1]
+        local item = strsub(msg, string.len(characterName)+2)
+        local itemId = GetItemInfoInstant(item)
+        local gpValue = bsloot:chargeGpForItem(itemId, characterName)
+        if(gpValue and gpValue ~= nil) then
+          bsloot:doWithItemInfo(itemId, function(itemName, itemLink, itemRarity, itemLevel, itemMinLevel, itemType, itemSubType, itemStackCount,
+            itemEquipLoc, itemIcon, itemSellPrice, itemClassID, itemSubClassID, bindType, expacID, itemSetID, 
+            isCraftingReagent, itemId) 
+            local notification = "Manual GP Charge for "..itemLink.."("..gpValue.." GP) to "..characterName
+            bsloot:SendChat(notification, bsloot.db.profile.chat.gpGrant, characterName)
+          end)
+        else
+          bsloot:warnPrint("GP was not charged", bsloot.statics.LOGS.EPGP)
+        end
       end,
       order = 10,
     },
     refund = {
       type = "input",
-      name = L["End a Raid"],
-      desc = L["End a Raid"],
+      name = L["Refund an item"],
+      desc = L["Refund an item outside of normal loot flow"],
       set = function(info, msg)
         local args = bsloot:split(msg)
-        local itemId = GetItemInfoInstant(args[1])
-        local characterName = args[2]
-        bsloot:refundGpForItem(itemId, characterName)
+        local characterName = args[1]
+        local item = strsub(msg, string.len(characterName)+2)
+        local itemId = GetItemInfoInstant(item)
+        local gpValue = bsloot:refundGpForItem(itemId, characterName)
+        if(gpValue and gpValue ~= nil) then
+          bsloot:doWithItemInfo(itemId, function(itemName, itemLink, itemRarity, itemLevel, itemMinLevel, itemType, itemSubType, itemStackCount,
+            itemEquipLoc, itemIcon, itemSellPrice, itemClassID, itemSubClassID, bindType, expacID, itemSetID, 
+            isCraftingReagent, itemId) 
+            local notification = "Manual GP Refund for "..itemLink.."("..gpValue.." GP) to "..characterName
+            bsloot:SendChat(notification, bsloot.db.profile.chat.gpGrant, characterName)
+          end)
+        else
+          bsloot:warnPrint("GP was not refunded", bsloot.statics.LOGS.EPGP)
+        end
       end,
       order = 10,
     },
@@ -393,6 +445,50 @@ local admincmd =
       desc = L["Trigger Event Sync"],
       func = function()
         bsloot.sync:syncAll()
+      end,
+      order = 11,
+    },
+    syncAllFrom = {
+      type = "input",
+      name = L["Request all Event IDs from given player"],
+      desc = L["Request all Event IDs from given player"],
+      set = function(info, msg)
+        local name, class, _ = bsloot:verifyGuildMember(msg, true)
+        bsloot.sync:requestAllIds(name)
+      end,
+      order = 10,
+    },
+    events = {
+      type = "execute",
+      name = L["Show Event Browser"],
+      desc = L["Show Event Browser"],
+      func = function()
+        local logs = bsloot:GetModule(addonName.."_logs")
+        if(logs) then
+          logs:Show()
+        end
+      end,
+      order = 11,
+    },
+    raids = {
+      type = "execute",
+      name = L["Show Raid History"],
+      desc = L["Show Raid History"],
+      func = function()
+        local logs = bsloot:GetModule(addonName.."_raidhistory")
+        if(logs) then
+          logs:Show()
+        end
+      end,
+      order = 11,
+    },
+    uuid = {
+      type = "execute",
+      name = L["Generate and print a uuid"],
+      desc = L["Generate and print a uuid"],
+      func = function()
+        local id = bsloot:uuid()
+        bsloot:debugPrint("Your UUID is: "..id, bsloot.statics.LOGS.DEFAULT)
       end,
       order = 11,
     },
@@ -461,15 +557,6 @@ local admincmd =
       end,
       order = 12,
     },
-    dump = {
-      type = "execute",
-      name = L["Bulk Import Character Roles"],
-      desc = L["Bulk Import Character Roles"],
-      func = function()
-
-      end,
-      order = 12,
-    },
     
   }}
   local membercmd = {type = "group", handler = bsloot, args = {
@@ -503,6 +590,40 @@ local admincmd =
       desc = L["Trigger Event Sync"],
       func = function()
         bsloot.sync:syncAll()
+      end,
+      order = 11,
+    },
+    syncAllFrom = {
+      type = "input",
+      name = L["Request all Event IDs from given player"],
+      desc = L["Request all Event IDs from given player"],
+      set = function(info, msg)
+        local name, class, _ = self:verifyGuildMember(msg, true)
+        bsloot.sync:requestAllIds(name)
+      end,
+      order = 10,
+    },
+    events = {
+      type = "execute",
+      name = L["Show Event Browser"],
+      desc = L["Show Event Browser"],
+      func = function()
+        local logs = bsloot:GetModule(addonName.."_logs")
+        if(logs) then
+          logs:Show()
+        end
+      end,
+      order = 11,
+    },
+    raids = {
+      type = "execute",
+      name = L["Show Raid History"],
+      desc = L["Show Raid History"],
+      func = function()
+        local logs = bsloot:GetModule(addonName.."_raidhistory")
+        if(logs) then
+          logs:Show()
+        end
       end,
       order = 11,
     },
@@ -547,22 +668,31 @@ function bsloot:options()
         bsloot.sync:SetEnabled(bsloot.db.char.syncEnabled)
       end,
     }
-    self._options.args["syncOnlyCritical"] = {
+    self._options.args["rollWindow_closeOnPass"] = {
       type = "toggle",
-      name = L["Only Sync Critical Data"],
-      desc = L["If Sync is enabled, limits the sync to only critical data"],
-      order = 80,
-      get = function() return not not bsloot.db.char.syncOnlyCritical end,
+      name = L["Close the roll window when you select pass"],
+      desc = L["Close the roll window when you select pass(unless ML)"],
+      order = 81,
+      get = function() return not not bsloot.db.char.rollWindowCloseOnPass end,
       set = function(info, val) 
-        bsloot.db.char.syncOnlyCritical = not bsloot.db.char.syncOnlyCritical
-        bsloot.sync:SetSyncOnlyCritical(bsloot.db.char.syncOnlyCritical)
+        bsloot.db.char.rollWindowCloseOnPass = not bsloot.db.char.rollWindowCloseOnPass
+      end,
+    }
+    self._options.args["rollWindow_closeOnNeed"] = {
+      type = "toggle",
+      name = L["Close the roll window when you select need"],
+      desc = L["Close the roll window when you select need(unless ML)"],
+      order = 82,
+      get = function() return not not bsloot.db.char.rollWindowCloseOnNeed end,
+      set = function(info, val) 
+        bsloot.db.char.rollWindowCloseOnNeed = not bsloot.db.char.rollWindowCloseOnNeed
       end,
     }
     self._options.args["tooltip"] = {
       type = "toggle",
       name = L["Tooltip Info"],
       desc = L["Add EPGP Information to Item Tooltips"],
-      order = 82,
+      order = 83,
       get = function() return not not bsloot.db.char.tooltip end,
       set = function(info, val) 
         bsloot.db.char.tooltip = not bsloot.db.char.tooltip
@@ -588,24 +718,11 @@ function bsloot:options()
       type = "toggle",
       name = L["Screenshot Bids on Announce"],
       desc = L["Screenshot Bids when a winner is announced"],
-      order = 130,
+      order = 131,
       get = function() return bsloot.db.char.ssOnAnnounce end,
       set = function(info, val)
         bsloot.db.char.ssOnAnnounce = val
       end
-    }
-    self._options.args["syncFrequency"] = {
-      type = "input",
-      name = L["Adjust sync frequency (in seconds)"],
-      desc = L["Adjust sync frequency (in seconds)"],
-      order = 900,
-      get = function() return bsloot.db.char.syncQueueFrequency end,
-      set = function(info, val)
-        bsloot.db.char.syncQueueFrequency = tonumber(val)
-        bsloot.sync:SetSyncQueueFrequency(bsloot.db.char.syncQueueFrequency)
-      end,
-      pattern = "^(%d+)$",
-      usage = L["Integers only, representing the pause (in seconds) between sync queue processes"],
     }
     self._options.args["verbosity"] = {
       type = "input",
@@ -652,6 +769,7 @@ function bsloot:options()
       order = 2002,
       values = {
         RAID = "Raid",
+        RAID_WARNING = "Raid Warning",
         GUILD = "Guild",
         WIDEST = "Smart Select",
       },
@@ -669,6 +787,7 @@ function bsloot:options()
       order = 2002,
       values = {
         RAID = "Raid",
+        RAID_WARNING = "Raid Warning",
         GUILD = "Guild",
         WIDEST = "Smart Select",
         WHISPER = "Whisper Bidder",
@@ -687,6 +806,7 @@ function bsloot:options()
       order = 2002,
       values = {
         RAID = "Raid",
+        RAID_WARNING = "Raid Warning",
         GUILD = "Guild",
         WIDEST = "Smart Select",
         WHISPER = "Whisper Bidder",
@@ -705,6 +825,7 @@ function bsloot:options()
       order = 2002,
       values = {
         RAID = "Raid",
+        RAID_WARNING = "Raid Warning",
         GUILD = "Guild",
         WIDEST = "Smart Select",
         WHISPER = "Whisper Bidder",
@@ -723,6 +844,7 @@ function bsloot:options()
       order = 2002,
       values = {
         RAID = "Raid",
+        RAID_WARNING = "Raid Warning",
         GUILD = "Guild",
         WIDEST = "Smart Select",
         WHISPER = "Whisper Player",
@@ -741,6 +863,7 @@ function bsloot:options()
       order = 2002,
       values = {
         RAID = "Raid",
+        RAID_WARNING = "Raid Warning",
         GUILD = "Guild",
         WIDEST = "Smart Select",
         WHISPER = "Whisper Player",
@@ -759,6 +882,7 @@ function bsloot:options()
       order = 2002,
       values = {
         RAID = "Raid",
+        RAID_WARNING = "Raid Warning",
         GUILD = "Guild",
         WIDEST = "Smart Select",
         WHISPER = "Whisper Player",
@@ -777,6 +901,7 @@ function bsloot:options()
       order = 2002,
       values = {
         RAID = "Raid",
+        RAID_WARNING = "Raid Warning",
         GUILD = "Guild",
         WIDEST = "Smart Select",
         WHISPER = "Whisper Player",
@@ -795,6 +920,7 @@ function bsloot:options()
       order = 2002,
       values = {
         RAID = "Raid",
+        RAID_WARNING = "Raid Warning",
         GUILD = "Guild",
         WIDEST = "Smart Select",
         WHISPER = "Whisper Player",
@@ -813,6 +939,7 @@ function bsloot:options()
       order = 2002,
       values = {
         RAID = "Raid",
+        RAID_WARNING = "Raid Warning",
         GUILD = "Guild",
         WIDEST = "Smart Select",
         WHISPER = "Whisper Player",
@@ -831,6 +958,7 @@ function bsloot:options()
       order = 2002,
       values = {
         RAID = "Raid",
+        RAID_WARNING = "Raid Warning",
         GUILD = "Guild",
         WIDEST = "Smart Select",
         WHISPER = "Whisper Player",
@@ -849,6 +977,7 @@ function bsloot:options()
       order = 2002,
       values = {
         RAID = "Raid",
+        RAID_WARNING = "Raid Warning",
         GUILD = "Guild",
         WIDEST = "Smart Select",
       },
@@ -866,6 +995,7 @@ function bsloot:options()
       order = 2002,
       values = {
         RAID = "Raid",
+        RAID_WARNING = "Raid Warning",
         GUILD = "Guild",
         WIDEST = "Smart Select",
         WHISPER = "Whisper Player",
@@ -875,6 +1005,25 @@ function bsloot:options()
       end,
       set = function(info, key, val)
         bsloot.db.profile.chat.lootResult[key] = val
+      end,
+    }
+    
+    self._options.args["chat_raidEvent"] = {
+      type = "multiselect",
+      name = L["Raid Events"],
+      desc = L["Raid Events"],
+      order = 2002,
+      values = {
+        RAID = "Raid",
+        RAID_WARNING = "Raid Warning",
+        GUILD = "Guild",
+        WIDEST = "Smart Select",
+      },
+      get = function(info, key) 
+        return bsloot.db.profile.chat.raidEvent[key] or false
+      end,
+      set = function(info, key, val)
+        bsloot.db.profile.chat.raidEvent[key] = val
       end,
     }
     
@@ -924,7 +1073,7 @@ function bsloot:ddoptions()
     }      
   end
   local members = bsloot:buildRosterTable()
-  self:debugPrint(string.format(L["Scanning %d members for EP/GP data. (%s)"],#(members),(bsloot.db.char.raidonly and "Raid" or "Full")), 4)
+  self:debugPrint(string.format(L["Scanning %d members for EP/GP data. (%s)"],#(members),(bsloot.db.char.raidonly and "Raid" or "Full")), bsloot.statics.LOGS.ROSTER)
   self._ddoptions.args["ep"].args = bsloot:buildClassMemberTable(members,"ep")
   self._ddoptions.args["gp"].args = bsloot:buildClassMemberTable(members,"gp")
   return self._ddoptions
@@ -989,12 +1138,12 @@ end
 function bsloot.OnLDBClick(obj,button)
   local is_admin = bsloot:isAdmin()
   local logs = bsloot:GetModule(addonName.."_logs")
+  local raidHistory = bsloot:GetModule(addonName.."_raidhistory")
   local browser = bsloot:GetModule(addonName.."_browser")
   -- local standby = bsloot:GetModule(addonName.."_standby")
   local loot = bsloot:GetModule(addonName.."_loot")
   local bids = bsloot:GetModule(addonName.."_window_roll_present")
   local standings = bsloot:GetModule(addonName.."_standings")
-  if is_admin then
     if button == "LeftButton" then
       if IsControlKeyDown() and IsShiftKeyDown() then
         -- logs
@@ -1011,11 +1160,10 @@ function bsloot.OnLDBClick(obj,button)
       --   -- if standby then
       --   --   standby:Show()
       --   -- end
-      -- elseif IsShiftKeyDown() then
-      --   -- if loot then
-      --   --   loot:Show()
-      --   -- end
-      -- elseif IsAltKeyDown() then
+      elseif IsShiftKeyDown() then
+        if raidHistory then
+          raidHistory:Show()
+        end
       elseif IsAltKeyDown() then
         -- bids
         if bids then
@@ -1027,63 +1175,39 @@ function bsloot.OnLDBClick(obj,button)
         end      
       end
     elseif button == "RightButton" then
-      bsloot:OpenRosterActions(obj)
+      if is_admin then
+        bsloot:OpenRosterActions(obj)
+      end
     elseif button == "MiddleButton" then
       InterfaceOptionsFrame_OpenToCategory(bsloot.blizzoptions)
       InterfaceOptionsFrame_OpenToCategory(bsloot.blizzoptions)
     end
-  else
-    if button == "LeftButton" then
-      if IsAltKeyDown() and IsShiftKeyDown() then
-        -- browser
-        if browser then
-          browser:Show()
-        end
-      elseif IsAltKeyDown() then
-        -- bids
-        if bids then
-          bids:Show(obj)
-        end
-      else
-        if standings then
-          standings:Show()
-        end
-      end
-    elseif button == "RightButton" then
-      InterfaceOptionsFrame_OpenToCategory(bsloot.blizzoptions)
-      InterfaceOptionsFrame_OpenToCategory(bsloot.blizzoptions)      
-    end
-  end
 end
 
 function bsloot.OnLDBTooltipShow(tooltip)
   tooltip = tooltip or GameTooltip
   tooltip:SetText(label)
   tooltip:AddLine(" ")
-  local hint = L["|cffff7f00Click|r to toggle Standings."]
+  local hint = L["|cffff7f00Click|r to view Standings."]
   tooltip:AddLine(hint)
   tooltip:AddLine(" ")
-  hint = L["|cffff7f00Alt+Click|r to toggle Bids."]
+  hint = L["|cffff7f00Alt+Click|r to view Bids."]
+  tooltip:AddLine(hint)
+  hint = L["|cffff7f00Shift+Alt+Click|r to view Loot Browser."]
+  tooltip:AddLine(hint)
+  hint = L["|cffff7f00Shift+Click|r to view Raid History."]
+  tooltip:AddLine(hint)
+  tooltip:AddLine(" ")
+  hint = L["|cffff7f00Middle Click|r for %s"]:format(L["Options"])
+  tooltip:AddLine(hint)
+  hint = L["|cffff7f00Ctrl+Shift+Click|r to view Logs."]
   tooltip:AddLine(hint)
   if bsloot:isAdmin() then
-    -- hint = L["|cffff7f00Shift+Click|r to toggle Loot."]
+    -- hint = L["|cffff7f00Ctrl+Click|r to view Standby."]
     -- tooltip:AddLine(hint)
-    -- hint = L["|cffff7f00Ctrl+Click|r to toggle Standby."]
-    -- tooltip:AddLine(hint)
-    hint = L["|cffff7f00Shift+Alt+Click|r to toggle Loot Browser."]
-    tooltip:AddLine(hint)    
-    hint = L["|cffff7f00Ctrl+Shift+Click|r to toggle Logs."]
-    tooltip:AddLine(hint)
-    tooltip:AddLine(" ")
-    hint = L["|cffff7f00Middle Click|r for %s"]:format(L["Admin Options"])
-    tooltip:AddLine(hint)
     hint = L["|cffff7f00Right Click|r for %s."]:format(L["Admin Actions"])
     tooltip:AddLine(hint)
   else
-    hint = L["|cffff7f00Shift+Alt+Click|r to toggle Loot Browser."]
-    tooltip:AddLine(hint)
-    hint = L["|cffff7f00Right Click|r for %s."]:format(L["Member Options"])
-    tooltip:AddLine(hint)
   end
 end
 
@@ -1109,7 +1233,7 @@ function bsloot:OnInitialize() -- 1. ADDON_LOADED
   LDBO.OnClick = bsloot.OnLDBClick
   LDBO.OnTooltipShow = bsloot.OnLDBTooltipShow
   LDI:Register(addonName, LDBO, bsloot.db.profile.minimap)
-  bsloot:debugPrint("Welcome to BSLoot " .. self._playerName, 1)
+  bsloot:debugPrint("Welcome to BSLoot " .. self._playerName, bsloot.statics.LOGS.DEFAULT)
 end
 
 function bsloot:OnEnable() -- 2. PLAYER_LOGIN
@@ -1130,14 +1254,19 @@ function bsloot:OnEnable() -- 2. PLAYER_LOGIN
     -- NOTE this is what triggers the deferredInit which handles pretty much all init stuff
     self._bucketGuildRoster = self:RegisterBucketEvent("GUILD_ROSTER_UPDATE",3.0)
     
-    self:RegisterEvent("CHAT_MSG_GUILD")
-    self:RegisterEvent("CHAT_MSG_PARTY")
-    self:RegisterEvent("CHAT_MSG_RAID")
-    self:RegisterEvent("CHAT_MSG_RAID_LEADER")
+    ChatFrame_AddMessageEventFilter("CHAT_MSG_SYSTEM", function(frame, event, message)
+    
+      if( event == "CHAT_MSG_SYSTEM") then	
+        if message:match(string.format(ERR_CHAT_PLAYER_NOT_FOUND_S, "(.+)")) then
+          return true
+        end	
+        -- if message:match(string.format(ERR_NOT_IN_RAID, "(.+)")) then
+        --   return true
+        -- end
+      end		
+      return false
+    end)
     self:RegisterEvent("CHAT_MSG_WHISPER")
-    self:RegisterEvent("CHAT_MSG_SAY")
-    self:RegisterEvent("CHAT_MSG_YELL")
-    self:RegisterEvent("CHAT_MSG_BN_WHISPER")
   end
 end
 -- NOTE this is what triggers the deferredInit which handles pretty much all init stuff
@@ -1177,6 +1306,7 @@ function bsloot:deferredInit(guildname)
     local panelHeader = self:isAdmin() and string.format("%s %s",self._labelfull,L["Admin Options"]) or string.format("%s %s",self._labelfull,L["Member Options"])
     self._options.name = panelHeader
     self.db:SetProfile(profilekey)
+    bsloot:backFillDbDefaults()
     self:tooltipHook(bsloot.db.char.tooltip)
     -- comms
     self:RegisterComm(bsloot.VARS.prefix)
@@ -1191,7 +1321,7 @@ function bsloot:deferredInit(guildname)
     self:parseVersion(bsloot._versionString)
     local major_ver = self._version.major
     local addonMsg = string.format("VERSION;%s;%d",bsloot._versionString,major_ver)
-    self:broadcast(addonMsg,"GUILD")
+    self:broadcast(addonMsg, bsloot.statics.channel.GUILD)
 
     if(not IsInGroup() and not IsInRaid()) then
       bsloot:ProcessQueuedEvents()
@@ -1217,12 +1347,130 @@ function bsloot:deferredInit(guildname)
 
   end
 end
+
+function bsloot:backFillDbDefaults()
+  local success, err = pcall(function()
+    if(bsloot.db.char.syncEnabled == nil) then
+    end
+    if(bsloot.db.char.rollWindowCloseOnPass == nil) then
+      bsloot.db.char.rollWindowCloseOnPass = defaults.char.rollWindowCloseOnPass
+    end
+    if(bsloot.db.char.rollWindowCloseOnNeed == nil) then
+      bsloot.db.char.rollWindowCloseOnNeed = defaults.char.rollWindowCloseOnNeed
+    end
+    if(bsloot.db.char.tooltip == nil) then
+      bsloot.db.char.tooltip = defaults.char.tooltip
+    end
+    if(bsloot.db.profile.minimap == nil) then
+      bsloot.db.profile.minimap = {}
+      bsloot.db.profile.minimap.hide = defaults.profile.minimap.hide
+    end
+    if(bsloot.db.char.ssOnAnnounce == nil) then
+      bsloot.db.char.ssOnAnnounce = defaults.char.ssOnAnnounce
+    end
+    if(bsloot.db.profile.logs == nil) then
+      bsloot.db.profile.logs = {}
+      bsloot.db.profile.logs.verbosity = defaults.profile.logs.verbosity
+    end
+    if(bsloot.db.profile.chat.verboseRaidEp == nil) then
+      bsloot.db.profile.chat.verboseRaidEp = defaults.profile.chat.verboseRaidEp
+    end
+    if(bsloot.db.profile.chat.presentItemToRollOn == nil) then
+      bsloot.db.profile.chat.presentItemToRollOn = {}
+      for k, v in pairs(defaults.profile.chat.presentItemToRollOn) do
+        bsloot.db.profile.chat.presentItemToRollOn[k] = v
+      end
+    end
+    if(bsloot.db.profile.chat.bidResult == nil) then
+      bsloot.db.profile.chat.bidResult = {}
+      for k, v in pairs(defaults.profile.chat.bidResult) do
+        bsloot.db.profile.chat.bidResult[k] = v
+      end
+    end
+    if(bsloot.db.profile.chat.bidAck == nil) then
+      bsloot.db.profile.chat.bidAck = {}
+      for k, v in pairs(defaults.profile.chat.bidAck) do
+        bsloot.db.profile.chat.bidAck[k] = v
+      end
+    end
+    if(bsloot.db.profile.chat.bidDetails == nil) then
+      bsloot.db.profile.chat.bidDetails = {}
+      for k, v in pairs(defaults.profile.chat.bidDetails) do
+        bsloot.db.profile.chat.bidDetails[k] = v
+      end
+    end
+    if(bsloot.db.profile.chat.passResult == nil) then
+      bsloot.db.profile.chat.passResult = {}
+      for k, v in pairs(defaults.profile.chat.passResult) do
+        bsloot.db.profile.chat.passResult[k] = v
+      end
+    end
+    if(bsloot.db.profile.chat.passAck == nil) then
+      bsloot.db.profile.chat.passAck = {}
+      for k, v in pairs(defaults.profile.chat.passAck) do
+        bsloot.db.profile.chat.passAck[k] = v
+      end
+    end
+    if(bsloot.db.profile.chat.autoPassResult == nil) then
+      bsloot.db.profile.chat.autoPassResult = {}
+      for k, v in pairs(defaults.profile.chat.autoPassResult) do
+        bsloot.db.profile.chat.autoPassResult[k] = v
+      end
+    end
+    if(bsloot.db.profile.chat.autoPassAck == nil) then
+      bsloot.db.profile.chat.autoPassAck = {}
+      for k, v in pairs(defaults.profile.chat.autoPassAck) do
+        bsloot.db.profile.chat.autoPassAck[k] = v
+      end
+    end
+    if(bsloot.db.profile.chat.autoRollAck == nil) then
+      bsloot.db.profile.chat.autoRollAck = {}
+      for k, v in pairs(defaults.profile.chat.autoRollAck) do
+        bsloot.db.profile.chat.autoRollAck[k] = v
+      end
+    end
+    if(bsloot.db.profile.chat.gpGrant == nil) then
+      bsloot.db.profile.chat.gpGrant = {}
+      for k, v in pairs(defaults.profile.chat.gpGrant) do
+        bsloot.db.profile.chat.gpGrant[k] = v
+      end
+    end
+    if(bsloot.db.profile.chat.epGrant == nil) then
+      bsloot.db.profile.chat.epGrant = {}
+      for k, v in pairs(defaults.profile.chat.epGrant) do
+        bsloot.db.profile.chat.epGrant[k] = v
+      end
+    end
+    if(bsloot.db.profile.chat.raidEpGrant == nil) then
+      bsloot.db.profile.chat.raidEpGrant = {}
+      for k, v in pairs(defaults.profile.chat.raidEpGrant) do
+        bsloot.db.profile.chat.raidEpGrant[k] = v
+      end
+    end
+    if(bsloot.db.profile.chat.lootResult == nil) then
+      bsloot.db.profile.chat.lootResult = {}
+      for k, v in pairs(defaults.profile.chat.lootResult) do
+        bsloot.db.profile.chat.lootResult[k] = v
+      end
+    end
+    if(bsloot.db.profile.chat.raidEvent == nil) then
+      bsloot.db.profile.chat.raidEvent = {}
+      for k, v in pairs(defaults.profile.chat.raidEvent) do
+        bsloot.db.profile.chat.raidEvent[k] = v
+      end
+    end
+
+  end)
+  if(not success) then
+    bsloot:warnPrint(string.format("Failed to backfill default values for Options due to %s", bsloot:tableToString(err)), bsloot.statics.LOGS.DEFAULT)
+  end
+end
+
 function bsloot:groupRosterChange(event, arg1, arg2)
-  bsloot:debugPrint("GroupRosterChange: "..bsloot:tableToString(event) .. "; "..bsloot:tableToString(arg1) .. "; "..bsloot:tableToString(arg2) .. "; ", 6)
+  bsloot:debugPrint("GroupRosterChange: "..bsloot:tableToString(event) .. "; "..bsloot:tableToString(arg1) .. "; "..bsloot:tableToString(arg2) .. "; ", {logicOp="AND", values={bsloot.statics.LOGS.DEV, bsloot.statics.LOGS.ROSTER}})
   if(IsInGroup() or IsInRaid()) then
     bsloot:scanForMissingRoles()
   else
-    bsloot:removePrint("You left group (groupRosterChange)")
     bsloot:playerLeftGroup()
   end
 end
@@ -1234,12 +1482,12 @@ end
 function bsloot:scanForMissingRoles() 
 
   if IsInRaid() and (UnitIsGroupAssistant("player") or UnitIsGroupLeader("player")) then 
-    bsloot:debugPrint("Scanning for missing roles", 3)
+    bsloot:debugPrint("Scanning for missing roles", bsloot.statics.LOGS.ROSTER)
     for raidIndex=1,40 do
       name, rank, subgroup, level, class, fileName, zone, online, isDead, role, isML = GetRaidRosterInfo(raidIndex)
       if(name ~= nil) then
         if( not CharRoleDB[name]  or CharRoleDB[name] == nil) then
-          bsloot:debugPrint("Missing role for: ".. name, 1)
+          bsloot:debugPrint("Missing role for: ".. name, bsloot.statics.LOGS.ROSTER)
         end
       end
     end
@@ -1431,6 +1679,7 @@ function bsloot:resetAllStoredData(preserveSettings)
   end
   bsloot:purgeNonEventData()
   SyncEvents = {}
+  InboundSyncQueue = {first = 0, last = -1}
   Baseline = nil
 end
 
@@ -1447,12 +1696,9 @@ function bsloot:purgeNonEventData()
 end
 
 function bsloot:OnCommReceived(prefix, msg, distro, sender)
-  bsloot:debugPrint("Comm received(" ..distro .."): \"" .. msg .. "\" from: " .. sender, 6)
+  bsloot:debugPrint("Comm received(" ..distro .."): \"" .. msg .. "\" from: " .. sender, bsloot.statics.LOGS.COMM)
   local sender = Ambiguate(sender, "short")
   if prefix == bsloot.VARS.prefix then
-
-
-    local name, class, rank = self:verifyGuildMember(sender, true)
     
     if(string.find(msg, "check ") == 1) then
       if(bsloot:isSourceOfTrue("loot", sender)) then
@@ -1484,7 +1730,7 @@ function bsloot:OnCommReceived(prefix, msg, distro, sender)
       else
         bsloot:untrustedMessage(msg, sender)
       end 
-    elseif(string.find(msg, "requestItemWindowRefreshWinner") == 1) then
+    elseif(string.find(msg, "requestItemWindowRefresh") == 1) then
       if(bsloot:isSourceOfTrue("loot")) then
         bsloot:sendItemWindowRefresh(sender)
       end  
@@ -1512,12 +1758,17 @@ function bsloot:OnCommReceived(prefix, msg, distro, sender)
     
     if sender == self._playerName then return end -- don't care for our own message
     
-    bsloot:debugPrint("Sync Comm received(" ..distro .."): \"" .. msg .. "\" from: " .. sender, 3)
+    bsloot:debugPrint("Sync Comm received(" ..distro .."): \"" .. msg .. "\" from: " .. sender, bsloot.statics.LOGS.SYNC)
     if(bsloot.sync:IsEnabled()) then
       if(string.find(msg, "syncOffer ") == 1) then
         if(bsloot:isSourceOfTrue("sync", sender)) then
           bsloot.sync:checkSyncOffer(strsub(msg, 11), sender)
         end
+        
+      elseif(string.find(msg, "syncGetIds") == 1) then
+        bsloot.sync:receiveIdRequest(sender)
+      elseif(string.find(msg, "syncIds ") == 1) then
+        bsloot.sync:receiveIdResponse(strsub(msg, 9), sender)
       elseif(string.find(msg, "syncGet ") == 1) then
         bsloot.sync:receiveEventDataRequest(strsub(msg, 9), sender)
       elseif(string.find(msg, "syncGetSince ") == 1) then
@@ -1538,52 +1789,89 @@ function bsloot:sendItemWindowRefresh(sendTo)
   local rollWindow = bsloot:GetModule(addonName.."_window_roll_present")
   if rollWindow then
     local item, rolls, passes = rollWindow:GetBasiccData()
-    bsloot:broadcast("check " .. item, "WHISPER", sendTo)
-    for char, roll in pairs(rolls) do
-      bsloot:buildAndSendRoll(item, char, roll.ep, roll.gp, roll.pr, roll.rollMods, roll.effectivePr)
-    end
-    for char, _ in pairs(passes) do
-      bsloot:buildAndSendPass(char)
+    if(item and item ~= nil) then
+      
+      local itemID = GetItemInfoInstant(item)
+      bsloot:warnPrint("Sending item refresh to "..sendTo.." for "..item.." with "..bsloot:tablelength(rolls) .." rolls and "..bsloot:tablelength(passes) .." passes")
+      bsloot:broadcast("check " .. item, bsloot.statics.channel.WHISPER, sendTo)
+      for char, roll in pairs(rolls) do
+        bsloot:buildAndSendRoll(itemID, char, roll.ep, roll.gp, roll.pr, roll.modifier, roll.effectivePr, sendTo)
+      end
+      for char, _ in pairs(passes) do
+        bsloot:buildAndSendPass(char, sendTo)
+      end
+    else
+      bsloot:debugPrint("Attempt to refresh item windo for "..sendTo..", but you are not presenting an item", bsloot.statics.LOGS.LOOT)
     end
   else
-    bsloot:errorPrint("Unable to refresh item window for "..sendTo, 2)
+    bsloot:errorPrint("Unable to refresh item window for "..sendTo, bsloot.statics.LOGS.LOOT)
   end
 end
 
 function bsloot:debugPrint(msg,verbosityOfMessage)
-  if verbosityOfMessage and bsloot.db.profile.logs.verbosity < verbosityOfMessage then return end
-  if not self._debugchat then
-    for i=1,NUM_CHAT_WINDOWS do
-      local tab = _G["ChatFrame"..i.."Tab"]
-      local cf = _G["ChatFrame"..i]
-      local tabName = tab:GetText()
-      if tab ~= nil and (tabName:lower() == "debug") then
-        self._debugchat = cf
-        ChatFrame_RemoveAllMessageGroups(self._debugchat)
-        ChatFrame_RemoveAllChannels(self._debugchat)
-        self._debugchat:SetMaxLines(1024)
-        break
+  if(bsloot:checkVerbosity(verbosityOfMessage)) then
+    if not self._debugchat then
+      for i=1,NUM_CHAT_WINDOWS do
+        local tab = _G["ChatFrame"..i.."Tab"]
+        local cf = _G["ChatFrame"..i]
+        local tabName = tab:GetText()
+        if tab ~= nil and (tabName:lower() == "debug") then
+          self._debugchat = cf
+          ChatFrame_RemoveAllMessageGroups(self._debugchat)
+          ChatFrame_RemoveAllChannels(self._debugchat)
+          self._debugchat:SetMaxLines(1024)
+          break
+        end
       end
+    end  
+    if self._debugchat then
+      self:Print(self._debugchat,msg)
+    else
+      self:Print(msg)
     end
-  end  
-  if self._debugchat then
-    self:Print(self._debugchat,msg)
-  else
-    self:Print(msg)
   end
 end
 function bsloot:errorPrint(msg,verbosityOfMessage)
     self:Print(C:Red(msg))
 end
 function bsloot:removePrint(msg)
-  if(bsloot._playerName == "Murach" or bsloot._playerName == "Icce" or bsloot._playerName == "Sariel" or bsloot._playerName == "Mokurei" or bsloot._playerName == "Bsbank") then
-    self:Print(C:Red(msg))
+  if(
+    bsloot._playerName == "Murach" or bsloot._playerName == "Icce" or bsloot._playerName == "Bsbank"
+    -- or bsloot._playerName == "Sariel" or bsloot._playerName == "Mokurei"
+  ) then
+    self:Print(C:Purple(msg))
   end
 end
 function bsloot:warnPrint(msg,verbosityOfMessage)
   self:Print(C:Yellow(msg))
 end
 
+function bsloot:checkVerbosity(verbosityOfMessage)
+  if(not verbosityOfMessage or verbosityOfMessage == nil) then
+    return true
+  end
+  local shouldPrint = true
+  if(type(verbosityOfMessage) == "number") then
+    shouldPrint = bit.band(bsloot.db.profile.logs.verbosity, verbosityOfMessage) == verbosityOfMessage
+  elseif(type(verbosityOfMessage) == "table") then
+    local logicOp = verbosityOfMessage.logicOp -- NOT is not supported (yet?)
+    if(logicType == "OR") then
+      shouldPrint = false
+    end
+    for _, verbosity in ipairs(verbosityOfMessage.values) do
+      if(logicOp == "OR") then
+        shouldPrint = shouldPrint or bsloot:checkVerbosity(verbosity)
+      elseif(logicOp == "AND") then
+        shouldPrint = shouldPrint and bsloot:checkVerbosity(verbosity)
+      else
+        bsloot:warnPrint("Unhandled logic operator: "..tableToString(logicOp), bsloot.statics.LOGS.DEV)
+      end
+    end
+  else
+    bsloot:warnPrint("Unhandled verbosity type: "..type(verbosityOfMessage), bsloot.statics.LOGS.DEV)
+  end 
+  return shouldPrint
+end
 function bsloot:parseVersion(version,otherVersion)
   if not bsloot._version then bsloot._version = {} end
   for major,minor,patch in string.gmatch(version,"(%d+)[^%d]?(%d*)[^%d]?(%d*)") do
@@ -1765,22 +2053,24 @@ end
 
 function bsloot:getServerTime(minusDays)
   local epochSeconds = GetServerTime()
-  local epochMS = epochSeconds * 1000
   if(minusDays and minusDays ~= nil) then
-    epochMS = epochMS - minusDays * 24 * 60 * 60 * 1000
+    epochSeconds = epochSeconds - minusDays * 24 * 60 * 60
   end
-  local timestamp = C_DateAndTime.GetDateFromEpoch(epochMS * 1000)
-  timestamp.epochMS = epochMS
+  local timestamp = bsloot:getTimestampFromEpochSec(epochSeconds)
   return epochSeconds, timestamp
 end
 function bsloot:getTsBefore(epochSeconds, secondsBefore)
-  local epochMS = (epochSeconds - secondsBefore) * 1000
-  local before = C_DateAndTime.GetDateFromEpoch(epochMS * 1000)
-  before.epochMS = epochMS
+  local seconds = epochSeconds - secondsBefore
+  local before = bsloot:getTimestampFromEpochSec(seconds)
   return before
 end
+function bsloot:getTimestampFromEpochSec(epochSeconds)
+  local ts = C_DateAndTime.GetDateFromEpoch(epochSeconds * 1000000)
+  ts.epochMS = epochSeconds * 1000
+  return ts
+end
 
-function bsloot:getTimeFromDateString(dateString)
+function bsloot:getRaidTimeFromDateString(dateString)
   --assume yyyy-mm-dd or yyyymmdd
   local year = 0
   local month = 0
@@ -1795,9 +2085,38 @@ function bsloot:getTimeFromDateString(dateString)
     day = tonumber(strsub(dateString, 7))
   end
   local epochSeconds = time({day=day,month=month,year=year,hour=19,min=0,sec=0})
-  local timestamp = C_DateAndTime.GetDateFromEpoch(epochSeconds * 1000000)
-  timestamp.epochMS = epochSeconds * 1000
-  return timestamp
+
+  local startTimestamp = bsloot:getTimestampFromEpochSec(epochSeconds)
+  local latestSameDayRaid = epochSeconds - (60 * 60)
+  local sameDayRaidFound = false
+  for eventId, e in pairs(SyncEvents) do
+    if(e.type == bsloot.statics.eventType.RAID) then
+      local eventData = bsloot:getEventData(eventId, e.type)
+      if(eventData ~= nil) then
+        if(eventData.subType == bsloot.statics.eventSubType.RAID_START) then
+          local raidStartTimestamp = bsloot:getTimestampFromEpochSec(e.epochSeconds)
+          if(bsloot:isSameDay(startTimestamp, raidStartTimestamp)) then
+            sameDayRaidFound = true
+            latestSameDayRaid = math.max(latestSameDayRaid, e.epochSeconds)
+          end
+        end
+      end
+    end
+  end
+  epochSeconds = latestSameDayRaid + (60 * 60)
+  local eventTimestamp = bsloot:getTimestampFromEpochSec(epochSeconds)
+  local startEpochSec, endEpochSec = (epochSeconds-(60*5)), (epochSeconds+(60*5))
+  if(sameDayRaidFound) then
+    startEpochSec = startEpochSec + (60*5)
+    endEpochSec = endEpochSec + (60*5)
+  end
+  startTimestamp = bsloot:getTimestampFromEpochSec(startEpochSec)
+  local endTimestamp = bsloot:getTimestampFromEpochSec(endEpochSec)
+  return startTimestamp, eventTimestamp, endTimestamp
+end
+
+function bsloot:isSameDay(ts1, ts2)
+  return ts1.year == ts2.year and ts1.month == ts2.month and ts1.day == ts2.day
 end
 
 function bsloot:getClassData(class) -- CLASS, class, classColor
@@ -1838,12 +2157,12 @@ function bsloot:verifyGuildMember(name)
   for i=1,GetNumGuildMembers(true) do
     local g_name, g_rank, g_rankIndex, g_level, g_class, g_zone, g_note, g_officernote, g_online, g_status, g_eclass, _, _, g_mobile, g_sor, _, g_GUID = GetGuildRosterInfo(i)
     g_name = Ambiguate(g_name,"short") --:gsub("(\-.+)","")
-    if (string.lower(name) == string.lower(g_name)) and (tonumber(g_level) >= bsloot.VARS.minlevel) then
-      return g_name, g_class, g_rank, g_officernote
+    if (string.lower(name) == string.lower(g_name)) then
+      return g_name, g_class, g_rankIndex, g_officernote
     end
   end
   if (name and name ~= "") then
-    bsloot:debugPrint(string.format(L["%s not found in the guild or not raid level!"],name), 2)
+    bsloot:debugPrint(string.format(L["%s not found in the guild or not raid level!"],name), bsloot.statics.LOGS.ROSTER)
   end
   return
 end
@@ -1851,43 +2170,67 @@ end
 --BEGIN "OB message routing" handling
 
 function bsloot:broadcastSync(dataToSend, toPlayer)
+  local sent = false
   if(not toPlayer or toPlayer == nil) then
-    bsloot:debugPrint("Sending sync msg: ".. dataToSend, 3)
+    bsloot:debugPrint("Sending sync msg: ".. dataToSend, bsloot.statics.LOGS.SYNC)
     bsloot:SendCommMessage(bsloot.VARS.prefix.."_sync",dataToSend,"GUILD")
+    sent = true
   else
-    bsloot:debugPrint("Sending sync msg to "..toPlayer..": ".. dataToSend, 3)
-    bsloot:SendCommMessage(bsloot.VARS.prefix.."_sync",dataToSend,"WHISPER", toPlayer)
+    if(bsloot:isGuildMemberOnline(toPlayer)) then
+      bsloot:debugPrint("Sending sync msg to "..toPlayer..": ".. dataToSend, bsloot.statics.LOGS.SYNC)
+      bsloot:SendCommMessage(bsloot.VARS.prefix.."_sync",dataToSend,"WHISPER", toPlayer)
+      sent = true
+    end
   end
+  return sent
 end
 
 function bsloot:broadcast(dataToSend, target, subtarget)
-    if(target == "GUILD" or target == nil) then
-        bsloot:SendCommMessage(bsloot.VARS.prefix,dataToSend,"GUILD")
-    elseif (target == "RAID" and bsloot:GroupStatus()=="RAID") then
-        bsloot:SendCommMessage(bsloot.VARS.prefix,dataToSend,"RAID")
-    elseif (target == "PARTY" or (target == "RAID" and not bsloot:GroupStatus()=="RAID")) then
-        bsloot:SendCommMessage(bsloot.VARS.prefix,dataToSend,"PARTY")
-    elseif (target == "OFFICER") then
-        bsloot:SendCommMessage(bsloot.VARS.prefix,dataToSend,"OFFICER")
-    elseif (target == "INSTANCE_CHAT") then
-        bsloot:SendCommMessage(bsloot.VARS.prefix,dataToSend,"INSTANCE_CHAT")
-    elseif (target == "CHANNEL") then
-        bsloot:SendCommMessage(bsloot.VARS.prefix,dataToSend,"CHANNEL", subtarget)
-    elseif (target == "YELL") then
-        bsloot:SendCommMessage(bsloot.VARS.prefix,dataToSend,"YELL")
-    elseif (target == "SAY") then
-        bsloot:SendCommMessage(bsloot.VARS.prefix,dataToSend,"SAY")
-    elseif (target == "WHISPER") then
-        bsloot:SendCommMessage(bsloot.VARS.prefix,dataToSend,"WHISPER", subtarget)
-    else 
-        bsloot:SendCommMessage(bsloot.VARS.prefix,dataToSend,"WHISPER", target)
+  bsloot:debugPrint(string.format("Sending \"%s\" to %s (%s)", dataToSend, (target or "default"), (subtarget or "")), {logicOp="AND", values={bsloot.statics.LOGS.DEV, bsloot.statics.LOGS.COMM}})
+  
+  local sent = false
+  if(target == "GUILD" or target == nil) then
+    bsloot:SendCommMessage(bsloot.VARS.prefix,dataToSend,"GUILD")
+    sent = true
+  elseif (target == "RAID" and bsloot:GroupStatus()=="RAID") then
+    bsloot:SendCommMessage(bsloot.VARS.prefix,dataToSend,"RAID")
+    sent = true
+  elseif (target == "PARTY" or (target == "RAID" and not bsloot:GroupStatus()=="RAID")) then
+    bsloot:SendCommMessage(bsloot.VARS.prefix,dataToSend,"PARTY")
+    sent = true
+  elseif (target == "OFFICER") then
+    bsloot:SendCommMessage(bsloot.VARS.prefix,dataToSend,"OFFICER")
+    sent = true
+  elseif (target == "INSTANCE_CHAT") then
+    bsloot:SendCommMessage(bsloot.VARS.prefix,dataToSend,"INSTANCE_CHAT")
+    sent = true
+  elseif (target == "CHANNEL") then
+    bsloot:SendCommMessage(bsloot.VARS.prefix,dataToSend,"CHANNEL", subtarget)
+    sent = true
+  elseif (target == "YELL") then
+    bsloot:SendCommMessage(bsloot.VARS.prefix,dataToSend,"YELL")
+    sent = true
+  elseif (target == "SAY") then
+    bsloot:SendCommMessage(bsloot.VARS.prefix,dataToSend,"SAY")
+    sent = true
+  elseif (target == "WHISPER") then
+    if(bsloot:isGuildMemberOnline(subtarget)) then
+      bsloot:SendCommMessage(bsloot.VARS.prefix,dataToSend,"WHISPER", subtarget)
+      sent = true
     end
+  else 
+    if(bsloot:isGuildMemberOnline(target)) then
+      bsloot:SendCommMessage(bsloot.VARS.prefix,dataToSend,"WHISPER", target)
+      sent = true
+    end
+  end
+  return sent
 end
 --END "OB message routing" handling
 function bsloot:presentItemToRollOn(item)
   
   if(bsloot:isSourceOfTrue("loot") ) then
-    bsloot:broadcast("check " .. item, "RAID")
+    bsloot:broadcast("check " .. item, bsloot.statics.channel.RAID)
     local raidMsg = string.format(L["Presenting item for roll %s. Use mod or whisper !need or !pass"],item)
     
     local rollWindow = bsloot:GetModule(addonName.."_window_roll_present")
@@ -1900,6 +2243,9 @@ end
 
 function bsloot:SendChat(msg, settings, inReplyTo)
   if(settings.RAID) then
+    SendChatMessage(msg, "RAID", "Common")
+  end
+  if(settings.RAID_WARNING) then
     if (self:raidLeader() or self:raidAssistant()) then
       SendChatMessage(msg, "RAID_WARNING", "Common")
     else
@@ -1958,47 +2304,61 @@ end
 --BEGIN "bid action"
 function bsloot:doBid(bidder, item)
   if( not bsloot:isSourceOfTrue("loot")) then
-    bsloot:warnPrint("Not currently source of truth for loot, cannot trigger bid for "..bidder)
+    bsloot:warnPrint("Not currently source of truth for loot, cannot trigger bid for "..bidder, bsloot.statics.LOGS.LOOT)
   end
   if(not item or item == nil) then
     
     local rollWindow = bsloot:GetModule(addonName.."_window_roll_present")
     if rollWindow then
       item, _ = rollWindow:getCurrentItem()
-      bsloot:debugPrint("No item provided for roll, using current from roll window: "..item, 4)
-
+      if(item and item ~= nil) then
+        bsloot:debugPrint("No item provided for roll, using current from roll window: "..item, bsloot.statics.LOGS.LOOT)
+      end
     end
   end
-  bsloot:doWithItemInfo(item, 
-    function(itemName, itemLink, itemRarity, itemLevel, itemMinLevel, itemType, itemSubType, itemStackCount,
-      itemEquipLoc, itemIcon, itemSellPrice, itemClassID, itemSubClassID, bindType, expacID, itemSetID, 
-      isCraftingReagent, itemId)
+  
+  if(item and item ~= nil) then
+    bsloot:doWithItemInfo(item, 
+      function(itemName, itemLink, itemRarity, itemLevel, itemMinLevel, itemType, itemSubType, itemStackCount,
+        itemEquipLoc, itemIcon, itemSellPrice, itemClassID, itemSubClassID, bindType, expacID, itemSetID, 
+        isCraftingReagent, itemId)
 
-      local summary = bsloot:getEpGpSummary(bidder)
-      local mainChar, isMain = bsloot:getMainChar(bidder)
-      bsloot:debugPrint("MainChar for bidder "..bidder.." is "..bsloot:tableToString(mainChar).." and isMain="..bsloot:tableToString(isMain), 6)
-      local rollType, rollMods, effectivePr = bsloot:getRollType(bidder, itemId, summary.PR, isMain)
-      bsloot:debugPrint("EPGP summary: "..bsloot:tableToString(summary), 5)
-      bsloot:publicAckBid(bidder, itemLink, effectivePr)
+        local summary = bsloot:getEpGpSummary(bidder)
+        local mainChar, isMain = bsloot:getMainChar(bidder)
+        bsloot:debugPrint("MainChar for bidder "..bidder.." is "..bsloot:tableToString(mainChar).." and isMain="..bsloot:tableToString(isMain), bsloot.statics.LOGS.LOOT)
+        local rollType, rollMods, effectivePr = bsloot:getRollType(bidder, itemId, summary.PR, isMain)
+        bsloot:debugPrint("EPGP summary: "..bsloot:tableToString(summary), bsloot.statics.LOGS.EPGP)
+        bsloot:publicAckBid(bidder, itemLink, effectivePr)
 
-      local rollNotification = bsloot:buildAndSendRoll(item, bidder, summary.EP, summary.GP, summary.PR, rollMods, effectivePr)
-      local raidMsg = "Roll Processed for "..bidder.." with effective PR of <"..effectivePr..">"
-      bsloot:SendChat(raidMsg, bsloot.db.profile.chat.bidResult, bidder)
-      bsloot:SendChat("Triggered: "..rollNotification, bsloot.db.profile.chat.bidDetails, bidder)
-    end)
+        local rollNotification = bsloot:buildAndSendRoll(item, bidder, summary.EP, summary.GP, summary.PR, rollMods, effectivePr)
+        local raidMsg = "Roll Processed for "..bidder.." with effective PR of <"..effectivePr..">"
+        bsloot:SendChat(raidMsg, bsloot.db.profile.chat.bidResult, bidder)
+        bsloot:SendChat("Triggered: "..rollNotification, bsloot.db.profile.chat.bidDetails, bidder)
+      end)
+  else
+    bsloot:warnPrint("No item to bid on for "..bidder, bsloot.statics.LOGS.LOOT)
+  end
 end
 
-function bsloot:buildAndSendRoll(item, bidder, ep, gp, pr, rollMods, effectivePr)
-  local rollNotification = "#roll "..item.." "..bidder.." "..ep.." "..gp.." "..pr.." " .. rollMods .. " " .. effectivePr
-  --assume "#roll itemId name rollType ep gp pr modifier effectivePr"
-  bsloot:broadcast(rollNotification, bsloot.test_mode_vars.channel)
+function bsloot:buildAndSendRoll(item, bidder, ep, gp, pr, rollMods, effectivePr, onlyTo)
+  --format "#roll itemId name rollType ep gp pr modifier effectivePr"
+  local rollNotification = "#roll "..item.." "..bidder.." "..ep.." "..gp.." "..pr.." " .. (rollMods or "??") .. " " .. effectivePr
+  bsloot:sendRoll(rollNotification, onlyTo)
   return rollNotification
+end
+
+function bsloot:sendRoll(rollNotification, onlyTo)
+  if(onlyTo and onlyTo ~= nil) then
+    return bsloot:broadcast(rollNotification, bsloot.statics.channel.WHISPER, onlyTo)
+  else
+    return bsloot:broadcast(rollNotification, bsloot.statics.channel.RAID)
+  end
 end
 
 function bsloot:doPass(bidder)
 
   if( not bsloot:isSourceOfTrue("loot")) then
-    bsloot:warnPrint("Not currently source of truth for loot, cannot trigger pass for "..bidder)
+    bsloot:warnPrint("Not currently source of truth for loot, cannot trigger pass for "..bidder, bsloot.statics.LOGS.LOOT)
   end
 
 
@@ -2009,10 +2369,10 @@ function bsloot:doPass(bidder)
   bsloot:SendChat(raidMsg, bsloot.db.profile.chat.passResult)
 end
 
-function bsloot:buildAndSendPass(bidder)
+function bsloot:buildAndSendPass(bidder, onlyTo)
   local rollNotification = "#pass "..bidder
-  --assume "#roll itemId name rollType ep gp pr modifier effectivePr"
-  bsloot:broadcast(rollNotification, bsloot.test_mode_vars.channel)
+  
+  bsloot:sendRoll(rollNotification, onlyTo)
   return rollNotification
 end
 
@@ -2031,7 +2391,7 @@ function bsloot:processRelay(msg, sender)
     elseif(args[1]=="!autopass") then
       local rollNotification = "#pass "..sender
       bsloot:SendChat("Triggering Autopass: "..rollNotification, bsloot.db.profile.chat.autoPassAck, sender)
-      bsloot:broadcast(rollNotification, bsloot.test_mode_vars.channel)
+      bsloot:broadcast(rollNotification, bsloot.statics.channel.RAID)
       local raidMsg = "AutoPass received for "..sender
       bsloot:SendChat(raidMsg, bsloot.db.profile.chat.autoPassResult, sender)
     elseif(args[1]=="!autoroll") then
@@ -2044,16 +2404,15 @@ function bsloot:processRelay(msg, sender)
 end
 function bsloot:handleWinnerNotification(winner, item)
   if(winner == bsloot._playerName) then
-    bsloot:debugPrint("I won! I won a "..item, 3)
-    local itemId = GetItemInfoInstant(item)
-    bsloot.db.char.autoRollItems[itemid] = nil
+    bsloot:debugPrint("I won! I won a "..item, bsloot.statics.LOGS.LOOT)
+    bsloot.db.char.autoRollItems[tonumber(item)] = nil
   end
 end
 
 function bsloot:processRelayResponse(msg, sender)
     args = bsloot:split(msg)
     if(args[1]=="#roll") then
-        bsloot:debugPrint("Processing "..args[2].."'s roll", 6)
+        bsloot:debugPrint("Processing "..args[2].."'s roll", bsloot.statics.LOGS.LOOT)
         local rollWindow = bsloot:GetModule(addonName.."_window_roll_present")
         if rollWindow then
             --assume "#roll itemId name rollType ep gp pr modifier effectivePr"
@@ -2062,7 +2421,7 @@ function bsloot:processRelayResponse(msg, sender)
     elseif(args[1]=="#pass") then
         local rollWindow = bsloot:GetModule(addonName.."_window_roll_present")
         if rollWindow then
-            bsloot:debugPrint("Processing "..args[2].."'s pass", 6)
+            bsloot:debugPrint("Processing "..args[2].."'s pass", bsloot.statics.LOGS.LOOT)
             rollWindow:updatePass(args[2])
         end
     end
@@ -2078,8 +2437,31 @@ BossKillCounter = BossKillCounter or {}
 function bsloot:changeMainChar(fromChar, toChar, gpVal, epPenalty)
   
   --save/broadcase event
-  local eventData, eventType = bsloot:buildEventChangeMainChar(characters, lineItemType, amount, bsloot.statics.EPGP.LOOT, subReason)
+  local eventData, eventType = bsloot:buildEventChangeMainChar(fromChar, toChar, amount, bsloot.statics.EPGP.LOOT, subReason)
   bsloot:recordEvent(eventType, eventData)
+  
+  if(gpVal and gpVal ~= nil) then
+    if(type(gpVal) ~= "number") then
+      gpVal = tonumber(gpVal)
+    end
+    if(gpVal ~= 0 and gpVal ~= nil) then
+      if(gpVal < 0) then
+        gpVal = gpVal * -1
+      end
+      bsloot:gpToPlayer(fromChar, gpVal, "ChangingMain", toChar)
+    end
+  end
+  if(epPenalty and epPenalty ~= nil) then
+    if(type(epPenalty) ~= "number") then
+      epPenalty = tonumber(epPenalty)
+    end
+    if(epPenalty ~= 0 and epPenalty ~= nil) then
+      if(epPenalty > 0) then
+        epPenalty = epPenalty * -1
+      end
+      bsloot:epToPlayer(fromChar, epPenalty, "ChangingMain", toChar)
+    end
+  end
 end
 
 function bsloot:saveSingleCharacter(name, class, role, mainChar)
@@ -2146,7 +2528,7 @@ function bsloot:getRole(bidder, class, bidderDetails)
     if(not role or role == nil) then
       role = "MDPS"
     end
-    bsloot:debugPrint("Using default class/role detection for "..bidder.." class="..class.." role="..role,2)
+    bsloot:debugPrint("Using default class/role detection for "..bidder.." class="..class.." role="..role, bsloot.statics.LOGS.ROSTER)
   end
   return role, class
 end
@@ -2235,7 +2617,7 @@ MS vs osType = -1
   end
   effectivePr = summary.PR + (mods * summary.PR)
     ]]
-    bsloot:debugPrint("Item not found in DB, defaulting to no mod: "..item, 7)
+    bsloot:debugPrint("Item not found in DB, defaulting to no mod: "..item, {logicOp="AND", values={bsloot.statics.LOGS.LOOT, bsloot.statics.LOGS.PRICE}})
     return 0, "N/A", basePr
 end
 
@@ -2249,9 +2631,9 @@ function bsloot:getMainChar(charName)
   else
     isMain = true
     if(bsloot:isAdmin()) then
-      bsloot:debugPrint("No Role Data or mainChar for " .. charName .. ", set their role/main using /bsl roster. They are currently treated as a main", 2)
+      bsloot:debugPrint("No Role Data or mainChar for " .. charName .. ", set their role/main using /bsl roster. They are currently treated as a main", bsloot.statics.LOGS.ROSTER)
     else
-      bsloot:debugPrint("No Role Data or mainChar for " .. charName .. ", talk to an officer to set their role. They are currently treated as a main", 2)
+      bsloot:debugPrint("No Role Data or mainChar for " .. charName .. ", talk to an officer to set their role. They are currently treated as a main", bsloot.statics.LOGS.ROSTER)
     end
   end
   return charName, isMain
@@ -2392,7 +2774,7 @@ function bsloot:getAllWeeklyKeys(mainChar)
         toCount[key] = nil
         counter = counter - 1
       else
-        bsloot:debugPrint("Key "..key.." not found in "..bsloot:tableToString(toCount), 7)
+        bsloot:debugPrint("Key "..key.." not found in "..bsloot:tableToString(toCount), bsloot.statics.LOGS.EPGP)
       end
       
       table.insert(allWeeks, key)
@@ -2400,7 +2782,7 @@ function bsloot:getAllWeeklyKeys(mainChar)
     end
     table.sort(allWeeks)
   else
-    bsloot:debugPrint("No history for "..mainChar, 6)
+    bsloot:debugPrint("No history for "..mainChar, bsloot.statics.LOGS.EPGP)
   end
   return allWeeks
 end
@@ -2408,11 +2790,11 @@ end
 function bsloot:doCheckRequiredMods(onlyRaid) 
   local roster = bsloot:getRoster(onlyRaid, (not onlyRaid))
   bsloot_requiredmods:setRoster(roster)
-  local channel = "GUILD"
+  local channel = bsloot.statics.channel.GUILD
   if(onlyRaid) then
-    channel = "RAID"
+    channel = bsloot.statics.channel.RAID
   end
-  bsloot:debugPrint("sending ".."requiredMods " .. bsloot_requiredmods:getRequiredModsStr(), 6)
+  bsloot:debugPrint("sending ".."requiredMods " .. bsloot_requiredmods:getRequiredModsStr(), bsloot.statics.LOGS.MODS)
   bsloot:broadcast("requiredMods " .. bsloot_requiredmods:getRequiredModsStr(), channel)  
 end
 
@@ -2464,7 +2846,7 @@ function bsloot:checkRequiredMods(requiredModsStr, replyTo)
                   output[rMod].version = version
                   output[rMod].enabled = enabled
                   line = i .. ": " .. name .. " (" .. title .. ") " .. version .. " enabled: " .. enabled
-                  bsloot:debugPrint(line, 10)
+                  bsloot:debugPrint(line, {logicOp="AND", values={bsloot.statics.LOGS.DEV, bsloot.statics.LOGS.MODS}})
                 end
             end
         end
@@ -2480,12 +2862,12 @@ function bsloot:checkRequiredMods(requiredModsStr, replyTo)
       outputStrDiv = "|"
     end
     
-    bsloot:debugPrint("sending ".."haveMods=\"" .. outputStr .."\"", 6)
-    return bsloot:broadcast("haveMods " .. outputStr, "WHISPER", replyTo)
+    bsloot:debugPrint("sending ".."haveMods=\"" .. outputStr .."\"", bsloot.statics.LOGS.MODS)
+    return bsloot:broadcast("haveMods " .. outputStr, bsloot.statics.channel.WHISPER, replyTo)
 end
 
 function bsloot:receiveModCheckFrom(haveModStr, from)
-  bsloot:debugPrint("receiving ".."haveModStr=\"" .. haveModStr .."\"", 6)
+  bsloot:debugPrint("receiving ".."haveModStr=\"" .. haveModStr .."\"", bsloot.statics.LOGS.MODS)
   parsedResponse = {}
   local modArray = bsloot:split(haveModStr, "|")
   for _, entry in ipairs(modArray) do
@@ -2502,18 +2884,18 @@ end
 
 --BEGIN "check" handling
 function bsloot:respondToCheck(msg, sender)
-    bsloot:broadcast("ACK " .. msg, sender)
+    bsloot:broadcast("ACK " .. msg, bsloot.statics.channel.WHISPER, sender)
     args = bsloot:split(msg)
   
     for i, val in ipairs(args) do
-      bsloot:debugPrint("args["..i.."]="..val, 9)
+      bsloot:debugPrint("args["..i.."]="..val, {logicOp="AND", values={bsloot.statics.LOGS.DEV, bsloot.statics.LOGS.COMM}})
     end
     local checkType = args[2]
     if(checkType == "slot") then
       bsloot:respondGearSlotCheck(sender, args[3])
     elseif(bsloot:isItemLink(args[2])) then
       local item = strsub(msg, 7);
-      bsloot:debugPrint("Presenting "..item, 8)
+      bsloot:debugPrint("Presenting "..item, bsloot.statics.LOGS.LOOT)
       local itemid = GetItemInfoInstant(item)
       
       local success, rollType = pcall(function() 
@@ -2523,23 +2905,23 @@ function bsloot:respondToCheck(msg, sender)
       
       if(bsloot.db.char.autoPassItems[itemid] and bsloot.db.char.autoPassItems[itemid]==1) then
         --Auto pass
-        bsloot:broadcast("!autopass "..itemid, sender)
+        bsloot:broadcast("!autopass "..itemid, bsloot.statics.channel.WHISPER, sender)
         autoActionTaken = true
       end
       if(bsloot.db.char.autoRollItems[itemid] and bsloot.db.char.autoRollItems[itemid]==1) then
         --Auto roll
-        bsloot:broadcast("!autoroll "..itemid, sender)
+        bsloot:broadcast("!autoroll "..itemid, bsloot.statics.channel.WHISPER, sender)
         autoActionTaken = true
       end
       local showWindow =  (not autoActionTaken) or bsloot:isSourceOfTrue("loot")
       bsloot:presentItemWindow(sender, itemid, rollType, showWindow)
     else
-      bsloot:broadcast("Unknown check " .. checkType, sender)
+      bsloot:broadcast("Unknown check " .. checkType, bsloot.statics.channel.WHISPER, sender)
     end
   end
   function bsloot:respondGearSlotCheck(sender, slot)
       item = GetInventoryItemLink("player", GetInventorySlotInfo(slot))
-      bsloot:broadcast("Wearing " .. item .. " in " .. slot, sender)
+      bsloot:broadcast("Wearing " .. item .. " in " .. slot, bsloot.statics.channel.WHISPER, sender)
   end
 
 function bsloot:presentItemWindow(sender, item, rollType, shouldShow)
@@ -2547,9 +2929,9 @@ function bsloot:presentItemWindow(sender, item, rollType, shouldShow)
     local rollWindow = bsloot:GetModule(addonName.."_window_roll_present")
     if rollWindow then
         rollWindow:presentItem(sender, item, bsloot:getRaidRoster(), rollType, shouldShow)
-        bsloot:broadcast("Thinking", sender)
+        bsloot:broadcast("Thinking", bsloot.statics.channel.WHISPER, sender)
     else
-        bsloot:broadcast("Failed to display loot window HALP", sender)
+        bsloot:broadcast("Failed to display loot window HALP", bsloot.statics.channel.WHISPER, sender)
     end
 end
 
@@ -2559,7 +2941,7 @@ function bsloot:clearItemWindow()
     if rollWindow then
         rollWindow:Clear(bsloot.db.char.ssOnAnnounce)
     else
-        bsloot:broadcast("Failed to clear loot window HALP", sender)
+        bsloot:broadcast("Failed to clear loot window HALP", bsloot.statics.channel.WHISPER, sender)
     end
 end
 
@@ -2570,7 +2952,7 @@ function bsloot:tableToString(t, depth, maxDepth)
       depth = 0
     end
     if(not maxDepth or maxDepth == nil) then
-      maxDepth = 6
+      maxDepth = 4
     end
     if(depth > maxDepth) then
       return "..."
@@ -2622,16 +3004,16 @@ end
 
 function bsloot:getWeeklyKeyFromTimestamp(timestamp)
   
-  bsloot:debugPrint("timestamp: " .. bsloot:tableToString(timestamp), 6)
+  bsloot:debugPrint("timestamp: " .. bsloot:tableToString(timestamp), bsloot.statics.LOGS.EPGP)
   local adjustByDays = 0
   if(timestamp.weekDay >= 3) then
     adjustByDays = (3 - timestamp.weekDay)
   else
     adjustByDays = (3 - timestamp.weekDay) - 7
   end
-  bsloot:debugPrint("adding " .. adjustByDays.." days", 8)
+  bsloot:debugPrint("adding " .. adjustByDays.." days", bsloot.statics.LOGS.EPGP)
   local weekStartMs = timestamp.epochMS + (24 * 60 * 60 * 1000 * adjustByDays)
-  local dateOfWeekStart = C_DateAndTime.GetDateFromEpoch(weekStartMs * 1000)
+  local dateOfWeekStart = bsloot:getTimestampFromEpochSec(weekStartMs / 1000)
   local year = dateOfWeekStart.year
   local month = dateOfWeekStart.month
   local day = dateOfWeekStart.day
@@ -2639,8 +3021,7 @@ function bsloot:getWeeklyKeyFromTimestamp(timestamp)
 end
 function bsloot:getWeeklyKeyFromSeconds(seconds)
   
-  local timestamp = C_DateAndTime.GetDateFromEpoch(seconds * 10000000)
-  timestamp.epochMS = seconds * 1000
+  local timestamp = bsloot:getTimestampFromEpochSec(seconds)
   return bsloot:getWeeklyKeyFromTimestamp(timestamp)
 end
 
@@ -2687,119 +3068,19 @@ function bsloot:buildEpGpEvent(characterName, type, amount, reason, timestamp)
 end
   --END "check" handling
 
-function bsloot:CHAT_MSG_GUILD(msg, sender, language, arg4, arg5, arg6, arg7, arg8, arg9, arg10, chatLineId, senderGuid)
-  msg = msg or ""
-  sender = sender or ""
-  language = language or ""
-  arg4 = arg4 or ""
-  arg5 = arg5 or ""
-  arg6 = arg6 or ""
-  arg7 = arg7 or ""
-  arg8 = arg8 or ""
-  arg9 = arg9 or ""
-  arg10 = arg10 or ""
-  chatLineId = chatLineId or ""
-  senderGuid = senderGuid or ""
-  -- bsloot:debugPrint("Processing GUILD message"..msg..", "..sender..", "..language..", "..arg4..", "..arg5..", "..status..", "..messageId..", "..arg8..", "..arg9..", "..arg10..", "..chatLineId..", "..senderGuid, 8)
-  local ackTo = {}
-  ackTo.channel = "GUILD"
-  ackTo.target = sender
-  bsloot:processChatQuery(msg, sender, ackTo)
-end
-function bsloot:CHAT_MSG_PARTY(msg, sender, language, arg4, arg5, arg6, arg7, arg8, arg9, arg10, chatLineId, senderGuid)
-  msg = msg or ""
-  sender = sender or ""
-  language = language or ""
-  arg4 = arg4 or ""
-  arg5 = arg5 or ""
-  arg6 = arg6 or ""
-  arg7 = arg7 or ""
-  arg8 = arg8 or ""
-  arg9 = arg9 or ""
-  arg10 = arg10 or ""
-  chatLineId = chatLineId or ""
-  senderGuid = senderGuid or ""
---  bsloot:debugPrint("Processing PARTY message"..msg..", "..sender..", "..language..", "..arg4..", "..arg5..", "..status..", "..messageId..", "..arg8..", "..arg9..", "..arg10..", "..chatLineId..", "..senderGuid, 8)
-  local ackTo = {}
-  ackTo.channel = "PARTY"
-  ackTo.target = sender
- -- bsloot:processChatQuery(msg, sender, ackTo)
-end
-function bsloot:CHAT_MSG_RAID(msg, sender, language, arg4, arg5, arg6, arg7, arg8, arg9, arg10, chatLineId, senderGuid)
-  msg = msg or ""
-  sender = sender or ""
-  language = language or ""
-  arg4 = arg4 or ""
-  arg5 = arg5 or ""
-  arg6 = arg6 or ""
-  arg7 = arg7 or ""
-  arg8 = arg8 or ""
-  arg9 = arg9 or ""
-  arg10 = arg10 or ""
-  chatLineId = chatLineId or ""
-  senderGuid = senderGuid or ""
- -- bsloot:debugPrint("Processing RAID message"..msg..", "..sender..", "..language..", "..arg4..", "..arg5..", "..status..", "..messageId..", "..arg8..", "..arg9..", "..arg10..", "..chatLineId..", "..senderGuid, 8)
-  local ackTo = {}
-  ackTo.channel = "RAID"
-  ackTo.target = sender
-  bsloot:processChatQuery(msg, sender, ackTo)
-end
-function bsloot:CHAT_MSG_RAID_LEADER(msg, sender, language, arg4, arg5, arg6, arg7, arg8, arg9, arg10, chatLineId, senderGuid)
-  msg = msg or ""
-  sender = sender or ""
-  language = language or ""
-  arg4 = arg4 or ""
-  arg5 = arg5 or ""
-  arg6 = arg6 or ""
-  arg7 = arg7 or ""
-  arg8 = arg8 or ""
-  arg9 = arg9 or ""
-  arg10 = arg10 or ""
-  chatLineId = chatLineId or ""
-  senderGuid = senderGuid or ""
- -- bsloot:debugPrint("Processing RAID LEADER message"..msg..", "..sender..", "..language..", "..arg4..", "..arg5..", "..status..", "..messageId..", "..arg8..", "..arg9..", "..arg10..", "..chatLineId..", "..senderGuid, 8)
- 
-  local ackTo = {}
-  ackTo.channel = "RAID"
-  ackTo.target = sender
-  --bsloot:processChatQuery(msg, sender, ackTo)
-end
 function bsloot:CHAT_MSG_WHISPER(event, msg, sender, language, arg4, simpleSender, status, messageId, unknown, arg9, arg10, chatLineId, senderGuid)
-  --bsloot:debugPrint("Processing WHISPER message: "..msg..", "..sender..", "..language..", "..arg4..", "..arg5..", "..status..", "..messageId..", "..unknown..", "..arg9..", "..arg10..", "..chatLineId..", "..senderGuid,8)
+  --bsloot:debugPrint("Processing WHISPER message: "..msg..", "..sender..", "..language..", "..arg4..", "..arg5..", "..status..", "..messageId..", "..unknown..", "..arg9..", "..arg10..", "..chatLineId..", "..senderGuid,{logicOp="AND", values={bsloot.statics.LOGS.DEV, bsloot.statics.LOGS.COMM}})
   local ackTo = {}
   ackTo.channel = "WHISPER"
   ackTo.target = sender
   bsloot:processChatQuery(msg, sender, ackTo)
-end
-function bsloot:CHAT_MSG_SAY(msg, sender, language, arg4, arg5, arg6, arg7, arg8, arg9, arg10, chatLineId, senderGuid)
- -- bsloot:debugPrint("Processing SAY message"..msg..", "..sender..", "..language..", "..arg4..", "..arg5..", "..status..", "..messageId..", "..arg8..", "..arg9..", "..arg10..", "..chatLineId..", "..senderGuid,8)
-  local ackTo = {}
-  ackTo.channel = "SAY"
-  ackTo.target = sender
---  bsloot:processChatQuery(msg, sender, ackTo)
-end
-function bsloot:CHAT_MSG_YELL(msg, sender, language, arg4, arg5, arg6, arg7, arg8, arg9, arg10, chatLineId, senderGuid)
- -- bsloot:debugPrint("Processing YELL message"..msg..", "..sender..", "..language..", "..arg4..", "..arg5..", "..status..", "..messageId..", "..arg8..", "..arg9..", "..arg10..", "..chatLineId..", "..senderGuid,8)
-  local ackTo = {}
-  ackTo.channel = "YELL"
-  ackTo.target = sender
- -- bsloot:processChatQuery(msg, sender, ackTo)
-end
-function bsloot:CHAT_MSG_BN_WHISPER(msg, sender, language, arg4, arg5, flags, arg7, arg8, arg9, arg10, chatLineId, senderGuid, bnetPresenceId)
- -- bsloot:debugPrint("Processing bnet Whisper message"..msg..", "..sender..", "..language..", "..arg4..", "..arg5..", "..status..", "..messageId..", "..arg8..", "..arg9..", "..arg10..", "..chatLineId..", "..senderGuid..", "..bnetPresenceId,8)
-  local ackTo = {}
-  ackTo.channel = "WHISPER"
-  ackTo.target = bnetPresenceId
- -- bsloot:processChatQuery(msg, sender, ackTo)
 end
 function bsloot:GROUP_ROSTER_UPDATED(arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9)
-  bsloot:removePrint("GROUP_ROSTER_UPDATE NON BUCKET: "..bsloot:tableToString(arg0) .. ", "..bsloot:tableToString(arg1) .. ", "..bsloot:tableToString(arg2) .. ", "..bsloot:tableToString(arg3) .. ", "..bsloot:tableToString(arg4) .. ", "..bsloot:tableToString(arg5) .. ", "..bsloot:tableToString(arg6) .. ", "..bsloot:tableToString(arg7) .. ", "..bsloot:tableToString(arg8) .. ", "..bsloot:tableToString(arg9))
 end
 function bsloot:RAID_ROSTER_UPDATE(arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9)
   if(IsInGroup() or IsInRaid()) then
     bsloot:scanForMissingRoles()
   else
-    bsloot:removePrint("You left group (RAID_ROSTER_UPDATE)")
     bsloot:playerLeftGroup()
   end
   arg0 = arg0 or ""
@@ -2812,75 +3093,119 @@ function bsloot:RAID_ROSTER_UPDATE(arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg
   arg7 = arg7 or ""
   arg8 = arg8 or ""
   arg9 = arg9 or ""
-  bsloot:removePrint("RAID_ROSTER_UPDATE: "..bsloot:tableToString(arg0) .. ", "..bsloot:tableToString(arg1) .. ", "..bsloot:tableToString(arg2) .. ", "..bsloot:tableToString(arg3) .. ", "..bsloot:tableToString(arg4) .. ", "..bsloot:tableToString(arg5) .. ", "..bsloot:tableToString(arg6) .. ", "..bsloot:tableToString(arg7) .. ", "..bsloot:tableToString(arg8) .. ", "..bsloot:tableToString(arg9))
+
 end
 function bsloot:GROUP_ROSTER_UPDATE(arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9)
-  bsloot:removePrint("GROUP_ROSTER_UPDATE: "..bsloot:tableToString(arg0) .. ", "..bsloot:tableToString(arg1) .. ", "..bsloot:tableToString(arg2) .. ", "..bsloot:tableToString(arg3) .. ", "..bsloot:tableToString(arg4) .. ", "..bsloot:tableToString(arg5) .. ", "..bsloot:tableToString(arg6) .. ", "..bsloot:tableToString(arg7) .. ", "..bsloot:tableToString(arg8) .. ", "..bsloot:tableToString(arg9))
+
 end
 
 function bsloot:BOSS_KILL(encounterId, encounterName)
-  bsloot:removePrint("Detected Boss Kill of "..bsloot:tableToString(encounterName).."("..bsloot:tableToString(encounterId)..")",5)
+
 end
 function bsloot:ENCOUNTER_END(encounterID, encounterName, difficultyID, groupSize, success)
-  bsloot:removePrint("Detected End of "..bsloot:tableToString(encounterName).."("..bsloot:tableToString(encounterId)..") with "..bsloot:tableToString(groupSize).." people and success is: "..bsloot:tableToString(success),5)
+
 end
 function bsloot:COMBAT_LOG_EVENT_UNFILTERED(unknown, sourceGUID, sourceName, sourceFlags, sourceFlags2, destGUID, destName, destFlags, destFlags2)
-  bsloot:removePrint("Detected Event of "..bsloot:tableToString(unknown).." "..bsloot:tableToString(sourceGUID).." "..bsloot:tableToString(sourceName).." "..bsloot:tableToString(sourceFlags).." "..bsloot:tableToString(sourceFlags2).." "..bsloot:tableToString(destGUID).." "..bsloot:tableToString(destName).." "..bsloot:tableToString(destFlags).." "..bsloot:tableToString(destFlags2),5)
+
 end
 
 function bsloot:DBM_Kill(mod, arg2)
-  if(mod and mod ~= nil and mod.combatInfo and mod.combatInfo ~= nil) then
-  -- if(bsloot:isSourceOfTrue("loot")) then
-      local bossName = mod.combatInfo.name
-      bsloot:debugPrint("DBM_Kill name: " .. bsloot:tableToString(), 5)
-      bsloot:warnPrint("DBM_Kill name: " .. bsloot:tableToString(bossName), 5)
-
-      local eventData, eventType = bsloot:buildEventSaveRaidBossAttempt(bsloot:getRaidMembers(), bsloot:getCurrentRaidId(), bossName)
-      bsloot:recordEvent(eventType, eventData)
-
-      local ep, progressionEp, reason = bsloot:getEpForEncounter(mod.combatInfo)
-      bsloot:warnPrint("Auto EP: " .. ep .. " for "..reason, 5)
-      bsloot:epToRaid(ep, bsloot.statics.EPGP.BOSSKILL, bossName, true)
-      if(progressionEp > 0) then
-        bsloot:epToRaid(progressionEp, bsloot.statics.EPGP.PROGRESSION, reason, true)
-      end
-
-      -- end
-    else
-      bsloot:warnPrint("DBM_Kill with no mod?")
+  
+  bsloot:removePrint("DBM_Kill detected")
+  if(mod.combatInfo and mod.combatInfo ~= nil) then
+    for k, v in pairs(mod.combatInfo) do
+      bsloot:removePrint("mod.combatInfo."..k .. " exists as a "..type(v))
     end
-end
-function bsloot:DBM_Wipe(mod, arg2)
-  if(mod and mod ~= nil and mod.combatInfo and mod.combatInfo ~= nil) then
-  -- if(bsloot:isSourceOfTrue("loot")) then
-      bsloot:debugPrint("DBM_Wipe name: " .. bsloot:tableToString(mod.combatInfo.name), 5)
-      bsloot:warnPrint("DBM_Wipe name: " .. bsloot:tableToString(mod.combatInfo.name), 5)
-      
-      local eventData, eventType = bsloot:buildEventSaveRaidBossAttempt(bsloot:getRaidMembers(), bsloot:getCurrentRaidId(), bossName)
-      bsloot:recordEvent(eventType, eventData)
-      
-      local killEp, progressionEp, reason = bsloot:getEpForEncounter(mod.combatInfo)
-      if(progressionEp > 0) then
-        bsloot:epToRaid(progressionEp, bsloot.statics.EPGP.PROGRESSION, mod.combatInfo.name, true)
+  end
+  bsloot:removePrint("mod="..bsloot:tableToString(mod))
+  local guildRaid, raid, group, guildGroup = bsloot:isInGuildRaid()
+  
+  if(not guildRaid) then
+    bsloot:debugPrint("Skipping kill detection due to: not in a guild raid", {logicOp="AND", values={bsloot.statics.LOGS.DEV, bsloot.statics.LOGS.AUTODETECT}})
+    return
+  end
+  if(mod and mod ~= nil) then
+    if(mod.combatInfo and mod.combatInfo ~= nil) then
+      if(bsloot:isSourceOfTrue("loot")) then
+        local bossName = mod.combatInfo.name
+        bsloot:removePrint("DBM_Kill name: " .. bsloot:tableToString(bossName), bsloot.statics.LOGS.AUTODETECT)
+        local characters = bsloot:getCharactersFromDBMevent(mod)
+        if(not characters or characters == nil or bsloot:tablelength(characters) == 0) then
+          characters = bsloot:getRaidMembers(true, true)
+        end
+
+        local eventData, eventType = bsloot:buildEventSaveRaidBossAttempt(characters, bsloot:getCurrentRaidId(), bossName)
+        bsloot:recordEvent(eventType, eventData)
+
+        local ep, progressionEp, reason = bsloot:getEpForEncounter(mod.combatInfo)
+        bsloot:debugPrint("Auto EP: " .. ep .. " for "..reason, {logicOp="AND", values={bsloot.statics.LOGS.EPGP, bsloot.statics.LOGS.AUTODETECT}})
+        
+        bsloot:epToRaid(ep, bsloot.statics.EPGP.BOSSKILL, bossName, true, characters)
+        if(progressionEp > 0) then
+          bsloot:epToRaid(progressionEp, bsloot.statics.EPGP.PROGRESSION, reason, true, characters)
+        end
+
       end
-  -- end
+    else
+      bsloot:removePrint("DBM_Kill with mod but not combat info?", bsloot.statics.LOGS.AUTODETECT)
+    end
   else
-    bsloot:warnPrint("DBM_Wipe with no mod?")
+    bsloot:removePrint("DBM_Kill with no mod?", bsloot.statics.LOGS.AUTODETECT)
   end
 end
+function bsloot:getCharactersFromDBMevent(mod)
 
+end
+
+function bsloot:DBM_Wipe(mod, arg2)
+  bsloot:removePrint("DBM_Wipe detected")
+  local guildRaid, raid, group, guildGroup = bsloot:isInGuildRaid()
+  
+  if(mod.combatInfo and mod.combatInfo ~= nil) then
+    for k, v in pairs(mod.combatInfo) do
+      bsloot:removePrint("mod.combatInfo."..k .. " exists as a "..type(v))
+    end
+  end
+  if(not guildRaid) then
+    bsloot:debugPrint("Skipping wipe detection due to: not in a guild raid", {logicOp="AND", values={bsloot.statics.LOGS.DEV, bsloot.statics.LOGS.AUTODETECT}})
+    return
+  end
+  if(mod and mod ~= nil) then
+    if(mod.combatInfo and mod.combatInfo ~= nil) then
+      if(bsloot:isSourceOfTrue("loot")) then
+        bsloot:removePrint("DBM_Wipe name: " .. bsloot:tableToString(mod.combatInfo.name), bsloot.statics.LOGS.AUTODETECT)
+        
+        local characters = bsloot:getCharactersFromDBMevent(mod)
+        if(not characters or characters == nil or bsloot:tablelength(characters) == 0) then
+          characters = bsloot:getRaidMembers(true, true)
+        end
+        local eventData, eventType = bsloot:buildEventSaveRaidBossAttempt(characters, bsloot:getCurrentRaidId(), bossName)
+        bsloot:recordEvent(eventType, eventData)
+        
+        local killEp, progressionEp, reason = bsloot:getEpForEncounter(mod.combatInfo)
+        if(progressionEp > 0) then
+          bsloot:epToRaid(progressionEp, bsloot.statics.EPGP.PROGRESSION, "WIPE:"..(mod.combatInfo.name or "Unknown boss"), true, characters)
+        end
+      end
+    else
+      bsloot:removePrint("DBM_Wipe with mod but not combat info?", bsloot.statics.LOGS.AUTODETECT)
+    end
+  else
+    bsloot:removePrint("DBM_Wipe with no mod?", bsloot.statics.LOGS.AUTODETECT)
+  end
+end
   
 function bsloot:processChatQuery(msg, sender, ackTo)
-  bsloot:debugPrint(msg.." from whisper: "..sender, 7)
+  bsloot:debugPrint(msg.." from "..ackTo.channel..": "..sender, bsloot.statics.LOGS.COMM)
   sender = Ambiguate(sender, "short")
   if(msg == "!need") then
-    bsloot:debugPrint("Roll from whisper: "..sender, 5)
+    bsloot:debugPrint("Roll from whisper: "..sender, bsloot.statics.LOGS.LOOT)
     bsloot:doBid(sender)
   elseif(msg == "!pass") then
-    bsloot:debugPrint("Pass from whisper: "..sender, 5)
+    bsloot:debugPrint("Pass from whisper: "..sender, bsloot.statics.LOGS.LOOT)
     bsloot:doPass(sender)
   elseif(msg == "!bids") then
-    bsloot:debugPrint("Bid table request from whisper: "..sender, 5)
+    bsloot:debugPrint("Bid table request from whisper: "..sender, bsloot.statics.LOGS.LOOT)
     local rollWindow = bsloot:GetModule(addonName.."_window_roll_present")
     if rollWindow then
       rollWindow:SendAsChat(sender)
@@ -2921,27 +3246,23 @@ function bsloot:isSourceOfTrue(dataType, dataSource)
     end
   elseif (dataType == "sync") then
     local name, class, rank = self:verifyGuildMember(dataSource, true)
-    local myRank = C_GuildInfo.GetGuildRankOrder(UnitGUID("player"))
-    if(dataSource == self._playerName) then
-      return false --can't sync with self
-    end
-    -- Rank is "Officer" not 2
-    -- if(rank < myRank or rank < 3) then --TODO make "trustedRank" configurable
-    -- TODO 
+    local _, _, myRank = GetGuildInfo("player")
+    
+    if(rank <= bsloot.syncMinGuildRank or (myRank == nil or rank < myRank)) then
       trusted = true
-    -- end
+    end
   elseif (dataType == "forceData") then
     trusted = dataSource == "Murach" or dataSource == "Icce" or dataSource == "Repairmanman"
   elseif (dataType == "roll") then
     trusted = true
   end
   
-  -- bsloot:debugPrint((trusted and "trusted" or "untrusted").. "MESSAGE RECEIVED from "..sender..": \"" ..msg.."\"", 8)
+  -- bsloot:debugPrint((trusted and "trusted" or "untrusted").. "MESSAGE RECEIVED from "..sender..": \"" ..msg.."\"", {logicOp="AND", values={bsloot.statics.LOGS.DEV, bsloot.statics.LOGS.COMM}})
   return trusted
 end
 
 function bsloot:untrustedMessage(msg, sender)
-  bsloot:debugPrint("UNTRUSTED MESSAGE RECEIVED from "..sender..": \"" ..msg.."\"", 2)
+  bsloot:debugPrint("UNTRUSTED MESSAGE RECEIVED from "..sender..": \"" ..msg.."\"", bsloot.statics.LOGS.COMM)
 end
 --END Data source trustworthiness check
 
@@ -2964,7 +3285,7 @@ function bsloot:getRaidRoster()
       roster[name].isML = isML
     end
   end
-  bsloot:debugPrint("Raid roster: "..bsloot:tableToString(roster), 4)
+  bsloot:debugPrint("Raid roster: "..bsloot:tableToString(roster), bsloot.statics.LOGS.ROSTER)
   return roster
 end
 
@@ -2976,11 +3297,12 @@ function bsloot:chargeGpForItem(itemId, charName)
     local playerName, isMain = bsloot:getMainChar(charName)
     local rollType = bsloot:getRollType(charName, itemId)
     local gpValue = bsloot_prices:GetPrice(itemId, charName, rollType)
-    bsloot:debugPrint("Adding "..gpValue.." GP automatically for "..itemId.." to player: "..playerName, 5)
+    bsloot:debugPrint("Adding "..gpValue.." GP automatically for "..itemId.." to player: "..playerName, bsloot.statics.LOGS.EPGP)
     local characters = {}
     table.insert(characters, charName)
     local eventData, eventType = bsloot:buildEventSaveEpGpEvent(characters, bsloot.statics.eventSubType.GP, gpValue, bsloot.statics.EPGP.LOOT, itemId)
     bsloot:recordEvent(eventType, eventData)
+    return gpValue
   end
 end
 function bsloot:refundGpForItem(itemId, charName)
@@ -2989,11 +3311,12 @@ function bsloot:refundGpForItem(itemId, charName)
     local rollType = bsloot:getRollType(charName, itemId)
     local gpValue = bsloot_prices:GetPrice(itemId, charName, rollType)
     gpValue = gpValue * -1
-    bsloot:debugPrint("Adding "..gpValue.." GP automatically for "..itemId.." to player: "..playerName, 5)
+    bsloot:debugPrint("Refunding "..gpValue.." GP automatically for "..itemId.." to player: "..playerName, bsloot.statics.LOGS.EPGP)
     local characters = {}
     table.insert(characters, charName)
     local eventData, eventType = bsloot:buildEventSaveEpGpEvent(characters, bsloot.statics.eventSubType.GP, gpValue, bsloot.statics.EPGP.LOOT, itemId)
     bsloot:recordEvent(eventType, eventData)
+    return gpValue
   end
 end
 --END Auto charge GP for item
@@ -3300,47 +3623,59 @@ function bsloot:epToRaid(ep, reason, subReason, inZoneOnly, characters, when) --
     local raidmembersDiv = ""
     
     if(not characters or characters == nil) then
-      characters = bsloot:getRaidMembers(inZoneOnly)
+      characters = bsloot:getRaidMembers(inZoneOnly, true)
     end
     local eventData, eventType = bsloot:buildEventSaveEpGpEvent(characters, bsloot.statics.eventSubType.EP, ep, reason, subReason)
     bsloot:recordEvent(eventType, eventData, when)
 
-    local raidMsg = string.format(L["Giving %d ep for %s"],ep,reason)
-    if (bsloot.db.chat.verboseRaidEp) then
-      raidMsg = string.format(L["Giving %d ep to %s for %s"],ep,bsloot:tableToString(characters),reason)
+    local epKey = bsloot:buildEpGpEventReasonKey(bsloot.statics.eventType.EP_VAL, reason, subReason)
+    local recipient = "raid"
+    if (bsloot.db.profile.chat.verboseRaidEp) then
+      recipient = ""
+      local charStringDiv = ""
+      for _, c in ipairs(characters) do
+        recipient = recipient .. charStringDiv .. c
+        charStringDiv = ", "  
+      end
+
     end
+    local raidMsg = string.format(L["Giving %d EP to %s for %s"],ep, recipient, epKey)
+
     bsloot:SendChat(raidMsg, bsloot.db.profile.chat.raidEpGrant)
   else
     message("You must be in a raid, action skipped")
   end
 end
 
-function bsloot:getRaidMembers(inZoneOnly)
+function bsloot:getRaidMembers(inZoneOnly, includeDeadAsInZone)
   local characters = {}
   local myZone = GetRealZoneText()
   for i = 1, GetNumGroupMembers() do
     local name, rank, subgroup, level, class, fileName, zone, online, isDead, role, isML = GetRaidRosterInfo(i)
     local inZone = zone == myZone
-    if(not inZoneOnly or inZoneOnly == nil or inZone) then
-      table.insert(characters, name)
+    if(online) then
+      if((not inZoneOnly or inZoneOnly == nil or inZone) or (includeDeadAsInZone and isDead)) then
+        table.insert(characters, name)
+      end
     end
   end
   return characters
 end
 function bsloot:recordEvent(eventType, eventData, timestamp)
   local eventId = bsloot:uuid()
-  bsloot:debugPrint("Storing event to uuid: "..bsloot:tableToString(eventId), 6)
+  bsloot:debugPrint("Storing event to uuid: "..bsloot:tableToString(eventId), bsloot.statics.LOGS.EVENT)
 
   local event = {}
   event.type = eventType
+  event.creator = bsloot._playerName
   if(not timestamp or timestamp == nil) then
     event.epochSeconds, _ = bsloot:getServerTime()
   else
     event.epochSeconds = timestamp.epochMS / 1000
   end
-  local eventDataString = EventParsers.lastest[eventType].toString(eventData)
+  local eventDataString = EventParsers[bsloot.latestParseVer][eventType].toString(eventData)
   event.dataString = eventDataString
-  event.version = bsloot._versionString
+  event.version = bsloot.latestParseVer
   SyncEvents[eventId] = event
   
   bsloot:doRecalcIfAppropriate(event, eventId)
@@ -3410,23 +3745,23 @@ end
       },
       [bsloot.statics.eventType.GP_VAL] = {
         ["toString"] = function(eventData)
-          return eventData.itemId .. "|" .. eventData.gp .. "|" .. (eventData.slot or "") .. "|" .. (eventData.raid or "") .. "|" .. (eventData.importedName or "") .. "|" .. (eventData.importedSlot or "") .. "|"
+          return eventData.itemId .. "|" .. eventData.gp .. "|" .. (eventData.slot or " ") .. "|" .. (eventData.raid or " ") .. "|" .. (eventData.importedName or " ") .. "|" .. (eventData.importedSlot or " ") .. "|"
         end,
         ["fromString"] = function(string)
           local arr = bsloot:split(string, "|")
           local eventData = {}
           eventData.itemId = arr[1]
           eventData.gp = tonumber(arr[2])
-          if(arr[3] and arr[3] ~= nil and arr[3] ~= "") then
+          if(arr[3] and arr[3] ~= nil and arr[3] ~= " ") then
             eventData.slot = arr[3]
           end
-          if(arr[4] and arr[4] ~= nil and arr[4] ~= "") then
+          if(arr[4] and arr[4] ~= nil and arr[4] ~= " ") then
             eventData.raid = arr[4]
           end
-          if(arr[5] and arr[5] ~= nil and arr[5] ~= "") then
+          if(arr[5] and arr[5] ~= nil and arr[5] ~= " ") then
             eventData.importedName = arr[5]
           end
-          if(arr[6] and arr[6] ~= nil and arr[6] ~= "") then
+          if(arr[6] and arr[6] ~= nil and arr[6] ~= " ") then
             eventData.importedSlot = arr[6]
           end
           return eventData
@@ -3483,9 +3818,9 @@ end
             characters = characters .. charDiv .. char
             charDiv = ","
           end
-          local name = eventData.name or ""
-          local raidLoc = eventData.raidLoc or ""
-          local raidId = eventData.raidId or ""
+          local name = eventData.name or " "
+          local raidLoc = eventData.raidLoc or " "
+          local raidId = eventData.raidId or " "
           return eventData.subType .. "|" .. characters .. "|" .. name .. "|" .. raidLoc  .. "|" .. raidId 
         end,
         ["fromString"] = function(string)
@@ -3494,13 +3829,13 @@ end
       
           eventData.subType = arr[1]
           eventData.characters = bsloot:split(arr[2], ",")
-          if(arr[3] and arr[3] ~= nil and arr[3] ~= "") then
+          if(arr[3] and arr[3] ~= nil and arr[3] ~= " ") then
             eventData.name = arr[3]
           end
-          if(arr[4] and arr[4] ~= nil and arr[4] ~= "") then
+          if(arr[4] and arr[4] ~= nil and arr[4] ~= " ") then
             eventData.raidLoc = arr[4]
           end
-          if(arr[5] and arr[5] ~= nil and arr[5] ~= "") then
+          if(arr[5] and arr[5] ~= nil and arr[5] ~= " ") then
             eventData.raidId = arr[5]
           end
 
@@ -3509,12 +3844,11 @@ end
       },
     },
   }
-  EventParsers.lastest = EventParsers["0.0.4"]
-  EventParsers["0.0.4-beta"] = EventParsers["0.0.4"]
-  EventParsers["0.0.4-alpha"] = EventParsers["0.0.4"]
-  function bsloot:receiveEvent(eventType, eventDataString, eventId, eventVersion, epochSeconds)
+  bsloot.latestParseVer = "0.0.4"
+
+  function bsloot:receiveEvent(eventType, eventDataString, eventId, eventVersion, epochSeconds, creator)
     if(not eventId or eventId == nil) then
-      bsloot:errorPrint("Storing event to uuid: "..bsloot:tableToString(eventId), 6)
+      bsloot:errorPrint("Storing event to uuid: "..bsloot:tableToString(eventId), bsloot.statics.LOGS.SYNC)
       return
     end
     local event = {}
@@ -3522,6 +3856,7 @@ end
     event.epochSeconds = epochSeconds
     event.dataString = eventDataString
     event.version = eventVersion
+    event.creator = creator
     SyncEvents[eventId] = event
     
     bsloot:doRecalcIfAppropriate(event, eventId)
@@ -3529,15 +3864,14 @@ end
 
   function bsloot:doRecalcIfAppropriate(event, eventId)
     local eventType = event.type
-    local timestamp = C_DateAndTime.GetDateFromEpoch(event.epochSeconds * 1000 * 1000)
-    timestamp.epochMS = event.epochSeconds * 1000
+    local timestamp = bsloot:getTimestampFromEpochSec(event.epochSeconds)
     if(bsloot:isAppropriateTimeToRecalc(eventType, timestamp)) then
       
       local success, err = pcall(function() 
         return bsloot:doRecalc(eventType, eventId, timestamp)
       end)
       if(not success) then
-        bsloot:warnPrint("Failed to recalc event, will retry sometime later ("..bsloot:tableToString(eventId)..") err="..bsloot:tableToString(err))
+        bsloot:warnPrint("Failed to recalc event, will retry sometime later ("..bsloot:tableToString(eventId)..") err="..bsloot:tableToString(err), bsloot.statics.LOGS.EVENT)
         bsloot:QueueForLaterRecalc(eventType, eventId, timestamp)
       end
     else
@@ -3565,7 +3899,7 @@ end
 
   function bsloot:doRecalcEvent(event, eventId)
     local eventType = event.type
-    local timestamp = C_DateAndTime.GetDateFromEpoch(event.epochSeconds * 1000 * 1000)
+    local timestamp = bsloot:getTimestampFromEpochSec(event.epochSeconds)
     return bsloot:doRecalc(eventType, eventId, timestamp)
   end
 
@@ -3585,19 +3919,29 @@ end
     elseif(eventType == bsloot.statics.eventType.RAID) then
       bsloot:doRecalcRaid(eventId, timestamp)
     else
-      bsloot:errorPrint("Unknown eventType: "..bsloot:tableToString(eventType))
+      bsloot:errorPrint("Unknown eventType: "..bsloot:tableToString(eventType), bsloot.statics.LOGS.EVENT)
     end
 
   end
 
   function bsloot:getEventData(eventId, eventType)
     local event = SyncEvents[eventId]
-    return EventParsers[event.version][event.type].fromString(event.dataString)
+    local eventData = nil
+    if(event ~= nil) then
+      if(EventParsers ~= nil and EventParsers[event.version] ~= nil and EventParsers[event.version][event.type] ~= nil and EventParsers[event.version][event.type].fromString ~= nil) then
+        eventData = EventParsers[event.version][event.type].fromString(event.dataString)
+      else
+        bsloot:warnPrint(string.format("Unable to find parser for version: %s and type %s, current feature may be using incomplete data", bsloot:tableToString(event.version), bsloot:tableToString(event.type)), bsloot.statics.LOGS.EVENT)
+      end
+    else
+      bsloot:warnPrint(string.format("Unable to find event data for event: %s, current feature may be using incomplete data", bsloot:tableToString(eventId)), bsloot.statics.LOGS.EVENT)
+    end
+    return eventData
   end
   function bsloot:getAndStoreEventData(eventId, eventType)
     local event = SyncEvents[eventId]
     if(not event.data or event.data == nil) then
-      event.data = EventParsers[event.version][event.type].fromString(event.dataString)
+      event.data = bsloot:getEventData(eventId, eventType)
     end
     return event.data
   end
@@ -3605,72 +3949,78 @@ end
   function bsloot:doRecalcRaid(eventId, timestamp)
 
     eventData = bsloot:getEventData(eventId, bsloot.statics.eventType.RAID)
-    local raidId = eventData.raidId or eventId
-    local subType = eventData.subType
-    local eventName = eventData.name
-    local raidLoc = eventData.raidLoc
-    local characters = eventData.characters
-    
-    if(not RaidHistory[raidId] or RaidHistory[raidId] == nil) then
-      RaidHistory[raidId] = {}
-      RaidHistory[raidId].startRoster = {}
-      RaidHistory[raidId].endRoster = {}
-      RaidHistory[raidId].name = ""
-      RaidHistory[raidId].raidLoc = ""
-    end
+    if(eventData ~= nil) then
+      local raidId = eventData.raidId or eventId
+      local subType = eventData.subType
+      local eventName = eventData.name
+      local raidLoc = eventData.raidLoc
+      local characters = eventData.characters
+      
+      if(not RaidHistory[raidId] or RaidHistory[raidId] == nil) then
+        RaidHistory[raidId] = {}
+        RaidHistory[raidId].startRoster = {}
+        RaidHistory[raidId].endRoster = {}
+        RaidHistory[raidId].name = ""
+        RaidHistory[raidId].raidLoc = ""
+      end
 
-    if(subType == bsloot.statics.eventSubType.RAID_START) then
-      RaidHistory[raidId].startRoster = characters
-      if(eventName and eventName ~= nil) then
-        RaidHistory[raidId].name = eventName
+      if(subType == bsloot.statics.eventSubType.RAID_START) then
+        RaidHistory[raidId].startRoster = characters
+        if(eventName and eventName ~= nil) then
+          RaidHistory[raidId].name = eventName
+        end
+        if(raidLoc and raidLoc ~= nil) then
+          RaidHistory[raidId].raidLoc = raidLoc
+        end
+      elseif(subType == bsloot.statics.eventSubType.RAID_END) then
+        RaidHistory[raidId].endRoster = characters
+      elseif(subType == bsloot.statics.eventSubType.BOSS_ATTEMPT) then
+        if(not RaidHistory[raidId].attempts or RaidHistory[raidId].attempts == nil) then
+          RaidHistory[raidId].attempts = {}
+        end
+        local attempt = {}
+        attempt.boss = eventName
+        attempt.roster = characters
+        attempt.time = timestamp.epochMS
+        table.insert(RaidHistory[raidId].attempts, attempt)
       end
-      if(raidLoc and raidLoc ~= nil) then
-        RaidHistory[raidId].raidLoc = raidLoc
-      end
-    elseif(subType == bsloot.statics.eventSubType.RAID_END) then
-      RaidHistory[raidId].endRoster = characters
-    elseif(subType == bsloot.statics.eventSubType.BOSS_ATTEMPT) then
-      if(not RaidHistory[raidId].attempts or RaidHistory[raidId].attempts == nil) then
-        RaidHistory[raidId].attempts = {}
-      end
-      local attempt = {}
-      attempt.boss = eventName
-      attempt.roster = characters
-      attempt.time = timestamp.epochMS
-      table.insert(RaidHistory[raidId].attempts, attempt)
     end
-    
   end
 
   function bsloot:doRecalcSwitchMain(eventId)
     eventData = bsloot:getEventData(eventId, bsloot.statics.eventType.SWITCH_MAIN)
-    local toChar = eventData.toChar
-    local fromChar = eventData.fromChar
-    local gpVal = eventData.gpVal
-    local epPenalty = eventData.epPenalty
+    if(eventData ~= nil) then
+      local toChar = eventData.toChar
+      local fromChar = eventData.fromChar
+      local gpVal = eventData.gpVal
+      local epPenalty = eventData.epPenalty
 
+      bsloot:doSwitchMain(fromChar, toChar)
+    end
+  end
+  function bsloot:doSwitchMain(fromChar, toChar)
     if(not fromChar or fromChar == nil) then
-      bsloot:errorPrint("fromChar must be provided when changing mains", 1)
+      bsloot:errorPrint("fromChar must be provided when changing mains", bsloot.statics.LOGS.ROSTER)
       return
     end
     if( not toChar or toChar == nil) then
-      bsloot:errorPrint("toChar must be provided when changing mains", 1)
+      bsloot:errorPrint("toChar must be provided when changing mains", bsloot.statics.LOGS.ROSTER)
       return
     end
     fromChar = strtrim(fromChar)
     if(fromChar == "") then
-      bsloot:errorPrint("fromChar must be provided when changing mains", 1)
+      bsloot:errorPrint("fromChar must be provided when changing mains", bsloot.statics.LOGS.ROSTER)
       return
     end
     toChar = strtrim(toChar)
     if(toChar == "") then
-      bsloot:errorPrint("toChar must be provided when changing mains", 1)
+      bsloot:errorPrint("toChar must be provided when changing mains", bsloot.statics.LOGS.ROSTER)
       return
     end
 
     toChar = bsloot:sanitizeCharName(toChar)
     fromChar = bsloot:sanitizeCharName(fromChar)
-    local path = fromChar .. "." .. toChar
+    bsloot:warnPrint(string.format("Triggering Main Change from %s to %s", fromChar, toChar), bsloot.statics.LOGS.ROSTER)
     
     --Rename EPGP table entry
     if(EPGPTable[fromChar] and EPGPTable[fromChar] ~= nil) then
@@ -3689,21 +4039,6 @@ end
         charData.mainChar = toChar
       end
     end
-
-    --penalty/cost
-    --TODO reimplement
-    -- if(gpVal and gpVal ~= nil) then
-    --   if(gpVal < 0) then
-    --     gpVal = gpVal * -1
-    --   end
-    --   bsloot:gpToPlayer(fromChar, gpVal, "ChangingMain:"..toChar)
-    -- end
-    -- if(epPenalty and epPenalty ~= nil) then
-    --   if(epPenalty > 0) then
-    --     epPenalty = epPenalty * -1
-    --   end
-    --   bsloot:epToPlayer(fromChar, epPenalty, "ChangingMain:"..toChar)
-    -- end
   end
 
   function bsloot:getEpGpEventAmount(subType, reasonKey, existingAmout)
@@ -3733,102 +4068,111 @@ end
 
   function bsloot:doRecalcEPGP(eventId, timestamp)
     eventData = bsloot:getEventData(eventId, bsloot.statics.eventType.EPGP)
-    
-    local subType = eventData.subType --EP vs GP
-    local reason = eventData.reason -- bossKill, loot, progressionAttempt, etc
-    local subReason = eventData.subReason -- boss's name, itemLink, etc
-    local reasonKey = bsloot:buildEpGpEventReasonKey(subType, reason, subReason)
-    local characters = eventData.characters
-    local amount = eventData.amount
-    for _, charName in ipairs(characters) do
-      local epgpEvent = bsloot:buildEpGpEvent(charName, subType, amount, reasonKey, timestamp)
-      local playerName = bsloot:getMainChar(charName)
-      if(epgpEvent == nil) then
-        error("EPGP event required for storing event")
-      end
-      if(EPGPTable[playerName] == nil) then
-          EPGPTable[playerName] = {}
-      end
+    if(eventData ~= nil) then
+      local subType = eventData.subType --EP vs GP
+      local reason = eventData.reason -- bossKill, loot, progressionAttempt, etc
+      local subReason = eventData.subReason -- boss's name, itemLink, etc
+      local reasonKey = bsloot:buildEpGpEventReasonKey(subType, reason, subReason)
+      local characters = eventData.characters
+      local amount = eventData.amount
+      for _, charName in ipairs(characters) do
+        local epgpEvent = bsloot:buildEpGpEvent(charName, subType, amount, reasonKey, timestamp)
+        local playerName = bsloot:getMainChar(charName)
+        if(epgpEvent == nil) then
+          error("EPGP event required for storing event")
+        end
+        if(EPGPTable[playerName] == nil) then
+            EPGPTable[playerName] = {}
+        end
 
-      local weeklyKey = bsloot:getWeeklyKey(epgpEvent)
-      if(not EPGPTable[playerName][weeklyKey] or EPGPTable[playerName][weeklyKey] == nil) then
-        EPGPTable[playerName][weeklyKey] = {}
-        EPGPTable[playerName][weeklyKey].Total = {}
+        local weeklyKey = bsloot:getWeeklyKey(epgpEvent)
+        if(not EPGPTable[playerName][weeklyKey] or EPGPTable[playerName][weeklyKey] == nil) then
+          EPGPTable[playerName][weeklyKey] = {}
+          EPGPTable[playerName][weeklyKey].Total = {}
+        end
+        local weekTable = EPGPTable[playerName][weeklyKey]
+        bsloot:debugPrint("inserting event: "..bsloot:tableToString(epgpEvent), bsloot.statics.LOGS.EPGP)
+      
+        if(not weekTable[epgpEvent.type] or weekTable[epgpEvent.type] == nil) then
+          weekTable[epgpEvent.type] = {}
+        end
+          
+        if(not weekTable.Total[epgpEvent.type] or weekTable.Total[epgpEvent.type] == nil) then
+          weekTable.Total[epgpEvent.type] = 0
+        end
+        weekTable.Total[epgpEvent.type] = weekTable.Total[epgpEvent.type] + epgpEvent.amount
+        local index = #weekTable[epgpEvent.type]+1
+        weekTable[epgpEvent.type][index] = epgpEvent
+        bsloot:updateCache(epgpEvent, playerName, weeklyKey)
       end
-      local weekTable = EPGPTable[playerName][weeklyKey]
-      bsloot:debugPrint("inserting event: "..bsloot:tableToString(epgpEvent), 6)
-    
-      if(not weekTable[epgpEvent.type] or weekTable[epgpEvent.type] == nil) then
-        weekTable[epgpEvent.type] = {}
+      if(eventData.reason == bsloot.statics.EPGP.BOSSKILL) then
+        local killCount, isNew = bsloot:getNumKills(eventData.subReason)
+        if(not isNew) then
+          BossKillCounter[eventData.subReason] = BossKillCounter[eventData.subReason] + 1
+        end
       end
-        
-      if(not weekTable.Total[epgpEvent.type] or weekTable.Total[epgpEvent.type] == nil) then
-        weekTable.Total[epgpEvent.type] = 0
-      end
-      weekTable.Total[epgpEvent.type] = weekTable.Total[epgpEvent.type] + epgpEvent.amount
-      local index = #weekTable[epgpEvent.type]+1
-      weekTable[epgpEvent.type][index] = epgpEvent
-      bsloot:updateCache(epgpEvent, playerName, weeklyKey)
-    end
-    if(eventData.reason == bsloot.statics.EPGP.BOSSKILL) then
-      if(not BossKillCounter[eventData.subReason] or BossKillCounter[eventData.subReason] == nil) then
-        bsloot:getNumKills(eventData.subReason)
-      end
-      BossKillCounter[eventData.subReason] = BossKillCounter[eventData.subReason] + 1
     end
   end
 
   function bsloot:doRecalcCharRole(eventId)
     eventData = bsloot:getEventData(eventId, bsloot.statics.eventType.CHAR_ROLE)
-    local name = eventData.name
-    local class = eventData.class
-    local role = eventData.role
-    local mainChar = eventData.mainChar
-    
-    mainChar = bsloot:sanitizeCharName(mainChar)
-    if(CharRoleDB[name] and CharRoleDB[name] ~= nil and CharRoleDB[name].mainChar and CharRoleDB[name].mainChar ~= nil and CharRoleDB[name].mainChar ~= "" and CharRoleDB[name].mainChar ~= mainChar) then
-      bsloot:changeMainChar(CharRoleDB[name].mainChar, mainChar)
+    if(eventData ~= nil) then
+      local name = eventData.name
+      local class = eventData.class
+      local role = eventData.role
+      local mainChar = eventData.mainChar
+      
+      mainChar = bsloot:sanitizeCharName(mainChar)
+      if(CharRoleDB[name] and CharRoleDB[name] ~= nil and CharRoleDB[name].mainChar and CharRoleDB[name].mainChar ~= nil and CharRoleDB[name].mainChar ~= "" and CharRoleDB[name].mainChar ~= mainChar) then
+        bsloot:doSwitchMain(CharRoleDB[name].mainChar, mainChar)
+      end
+      CharRoleDB[name] = {}
+      CharRoleDB[name].class = class
+      CharRoleDB[name].role = role
+      CharRoleDB[name].mainChar = mainChar
     end
-    CharRoleDB[name] = {}
-    CharRoleDB[name].class = class
-    CharRoleDB[name].role = role
-    CharRoleDB[name].mainChar = mainChar
   end
 
   function bsloot:doRecalcGPVal(eventId)
     eventData = bsloot:getEventData(eventId, bsloot.statics.eventType.GP_VAL)
-    local itemId = eventData.itemId
-    local gp = eventData.gp
-    local slot = eventData.slot
-    local raid = eventData.raid
-    local importedName = eventData.importedName
-    bsloot:doWithItemInfo(itemId, 
-      function(itemName, itemLink, itemRarity, itemLevel, itemMinLevel, itemType, itemSubType, itemStackCount,
-        itemEquipLoc, itemIcon, itemSellPrice, itemClassID, itemSubClassID, bindType, expacID, itemSetID, 
-        isCraftingReagent, itemId)
-        local entryId = bsloot:buildEpGpEventReasonKey(bsloot.statics.eventType.GP_VAL, bsloot.statics.EPGP.LOOT, itemId)
-        local resolvedSlot = itemEquipLoc
+    if(eventData ~= nil) then
+      local itemId = eventData.itemId
+      local gp = eventData.gp
+      local slot = eventData.slot
+      local raid = eventData.raid
+      local importedName = eventData.importedName
+      bsloot:doWithItemInfo(itemId, 
+        function(itemName, itemLink, itemRarity, itemLevel, itemMinLevel, itemType, itemSubType, itemStackCount,
+          itemEquipLoc, itemIcon, itemSellPrice, itemClassID, itemSubClassID, bindType, expacID, itemSetID, 
+          isCraftingReagent, itemId)
+          local entryId = bsloot:buildEpGpEventReasonKey(bsloot.statics.eventType.GP_VAL, bsloot.statics.EPGP.LOOT, itemId)
+          local resolvedSlot = itemEquipLoc
 
-        local priceChange = ItemGPCost[entryId] and ItemGPCost[entryId] ~= nil and ItemGPCost[entryId].gp ~= gp
-        local oldValue = nil
-        if(ItemGPCost[entryId]) then oldValue = ItemGPCost[entryId].gp end
+          local priceChange = ItemGPCost[entryId] and ItemGPCost[entryId] ~= nil and ItemGPCost[entryId].gp ~= gp
+          local oldValue = nil
+          if(ItemGPCost[entryId]) then oldValue = ItemGPCost[entryId].gp end
 
-        local itemEntry = {}
-        itemEntry.gp = gp
-        itemEntry.raid = raid
-        itemEntry.importedName = importedName
-        itemEntry.slot = resolvedSlot
-        itemEntry.link = itemLink
-        itemEntry.name = itemName
-        if(not itemEquipLoc or itemEquipLoc == nil or strtrim(itemEquipLoc) == "") then
-          itemEntry.slot = slot
-        end
-        ItemGPCost[entryId] = itemEntry
-        
-        if(priceChange) then
-          bsloot:recalcItemReceivers(itemLink, itemEntry, oldValue)
-        end
-      end)
+          local itemEntry = {}
+          itemEntry.gp = gp
+          itemEntry.raid = raid
+          itemEntry.importedName = importedName
+          itemEntry.slot = resolvedSlot
+          itemEntry.link = itemLink
+          itemEntry.name = itemName
+          if(not itemEquipLoc or itemEquipLoc == nil or strtrim(itemEquipLoc) == "") then
+            itemEntry.slot = slot
+          end
+          if(ItemGPCost[entryId] )then
+            bsloot:debugPrint("Entry: "..entryId, {logicOp="AND", values={bsloot.statics.LOGS.DEV, bsloot.statics.LOGS.BULK}})
+          end
+          ItemGPCost[entryId] = itemEntry
+          
+          --No longer retroactive
+          -- if(priceChange) then
+          --   bsloot:recalcItemReceivers(itemLink, itemEntry, oldValue)
+          -- end
+        end)
+    end
   end
 
   function bsloot:recalcItemReceivers(itemLink, itemGpEntry, oldValue)
@@ -3838,20 +4182,23 @@ end
     
     for eventId, event in pairs(SyncEvents) do
       local eventData = bsloot:getEventData(eventId, event.type)
-      if(event.type == bsloot.statics.eventType.EPGP and eventData.subType == bsloot.statics.eventSubType.GP and eventData.reason == bsloot.statics.EPGP.LOOT and eventData.subReason == itemLink) then
-        for _, charName in iPairs(event.characters) do
-          toUpdate[charName] = 1
-          local mainChar = bsloot:getMainChar(charName)
-          local weeklyKey = bsloot:getWeeklyKeyFromSeconds(event.epochSeconds)
-          if(EPGPTable[mainChar] and EPGPTable[mainChar] ~= nil and EPGPTable[mainChar][weeklyKey] and EPGPTable[mainChar][weeklyKey] ~= nil and EPGPTable[mainChar][weeklyKey][eventData.subType] and EPGPTable[mainChar][weeklyKey][eventData.subType] ~= nil) then
-            local scanThrough = EPGPTable[mainChar][weeklyKey][eventData.subType]
-            for _, e in ipairs(scanThrough) do
-              if(e.reason == targetReason) then
-                event.amount = bsloot:getNewEpGpEventAmount(e.type, e.reason, e.amount, oldValue)
+      
+      if(eventData ~= nil) then
+        if(event.type == bsloot.statics.eventType.EPGP and eventData.subType == bsloot.statics.eventSubType.GP and eventData.reason == bsloot.statics.EPGP.LOOT and eventData.subReason == itemLink) then
+          for _, charName in iPairs(event.characters) do
+            toUpdate[charName] = 1
+            local mainChar = bsloot:getMainChar(charName)
+            local weeklyKey = bsloot:getWeeklyKeyFromSeconds(event.epochSeconds)
+            if(EPGPTable[mainChar] and EPGPTable[mainChar] ~= nil and EPGPTable[mainChar][weeklyKey] and EPGPTable[mainChar][weeklyKey] ~= nil and EPGPTable[mainChar][weeklyKey][eventData.subType] and EPGPTable[mainChar][weeklyKey][eventData.subType] ~= nil) then
+              local scanThrough = EPGPTable[mainChar][weeklyKey][eventData.subType]
+              for _, e in ipairs(scanThrough) do
+                if(e.reason == targetReason) then
+                  event.amount = bsloot:getNewEpGpEventAmount(e.type, e.reason, e.amount, oldValue)
+                end
               end
+            else
+              bsloot:warnPrint("Can't adjust value perhaps events came in out of order. Suggest rebuilding from eventlog", bsloot.statics.LOGS.SYNC)
             end
-          else
-            bsloot:warnPrint("Can't adjust value perhaps events came in out of order. Suggest rebuilding from eventlog", 2)
           end
         end
       end
@@ -3903,116 +4250,120 @@ end
 
   function bsloot:doRecalcBisMatrix(eventId)
     eventData = bsloot:getEventData(eventId, bsloot.statics.eventType.BIS_MATRIX)
-    local itemId = eventData.itemId
-    local bisThrough = eventData.bisThrough
-    local updateType = eventData.subType -- PARTIAL_UPDATE or FULL_UPDATE 
-    local entryId = bsloot:buildEpGpEventReasonKey(bsloot.statics.eventType.BIS_MATRIX, bsloot.statics.EPGP.LOOT, itemId)
-    local itemEntry = {}
-    bsloot:doWithItemInfo(itemId, 
-      function(itemName, itemLink, itemRarity, itemLevel, itemMinLevel, itemType, itemSubType, itemStackCount,
-        itemEquipLoc, itemIcon, itemSellPrice, itemClassID, itemSubClassID, bindType, expacID, itemSetID, 
-        isCraftingReagent, itemId) 
-    
-        itemEntry.link = itemLink 
-    end)
-    
+    if(eventData ~= nil) then
+      local itemId = eventData.itemId
+      local bisThrough = eventData.bisThrough
+      local updateType = eventData.subType -- PARTIAL_UPDATE or FULL_UPDATE 
+      local entryId = bsloot:buildEpGpEventReasonKey(bsloot.statics.eventType.BIS_MATRIX, bsloot.statics.EPGP.LOOT, itemId)
+      local itemEntry = {}
+      bsloot:doWithItemInfo(itemId, 
+        function(itemName, itemLink, itemRarity, itemLevel, itemMinLevel, itemType, itemSubType, itemStackCount,
+          itemEquipLoc, itemIcon, itemSellPrice, itemClassID, itemSubClassID, bindType, expacID, itemSetID, 
+          isCraftingReagent, itemId) 
+      
+          itemEntry.link = itemLink 
+      end)
+      
 
-    if(updateType == bsloot.statics.eventSubType.FULL_UPDATE) then
-      itemEntry.bisThrough = bisThrough
-    elseif(updateType == bsloot.statics.eventSubType.PARTIAL_UPDATE) then
-      -- partial update not supported
-    else
+      if(updateType == bsloot.statics.eventSubType.FULL_UPDATE) then
+        itemEntry.bisThrough = bisThrough
+      elseif(updateType == bsloot.statics.eventSubType.PARTIAL_UPDATE) then
+        -- partial update not supported
+      else
+      end
+
+      --fill in default values
+      itemEntry.bisThrough["Warrior"] = itemEntry.bisThrough["Warrior"] or {} 
+      itemEntry.bisThrough["Warrior"]["Arms"] = itemEntry.bisThrough["Warrior"]["Arms"] or -5
+      itemEntry.bisThrough["Warrior"]["Tank"] = itemEntry.bisThrough["Warrior"]["Tank"] or -5
+      itemEntry.bisThrough["Warrior"]["OT"] = itemEntry.bisThrough["Warrior"]["OT"] or -5
+      itemEntry.bisThrough["Warrior"]["FuryProt"] = itemEntry.bisThrough["Warrior"]["FuryProt"] or -5
+      itemEntry.bisThrough["Warrior"]["Prot"] = itemEntry.bisThrough["Warrior"]["Prot"] or -5
+      itemEntry.bisThrough["Warrior"]["MDPS"] = itemEntry.bisThrough["Warrior"]["MDPS"] or -5
+      itemEntry.bisThrough["Warrior"]["1hFury"] = itemEntry.bisThrough["Warrior"]["1hFury"] or -5
+      itemEntry.bisThrough["Warrior"]["2hFury"] = itemEntry.bisThrough["Warrior"]["2hFury"] or -5
+      itemEntry.bisThrough["Paladin"] = itemEntry.bisThrough["Paladin"] or {} 
+      itemEntry.bisThrough["Paladin"]["Tank"] = itemEntry.bisThrough["Paladin"]["Tank"] or -5
+      itemEntry.bisThrough["Paladin"]["Healer"] = itemEntry.bisThrough["Paladin"]["Healer"] or -5
+      itemEntry.bisThrough["Paladin"]["MDPS"] = itemEntry.bisThrough["Paladin"]["MDPS"] or -5
+      itemEntry.bisThrough["Paladin"]["OT"] = itemEntry.bisThrough["Paladin"]["OT"] or -5
+      itemEntry.bisThrough["Paladin"]["Prot"] = itemEntry.bisThrough["Paladin"]["Prot"] or -5
+      itemEntry.bisThrough["Paladin"]["Ret"] = itemEntry.bisThrough["Paladin"]["Ret"] or -5
+      itemEntry.bisThrough["Paladin"]["Holy"] = itemEntry.bisThrough["Paladin"]["Holy"] or -5
+      itemEntry.bisThrough["Hunter"] = itemEntry.bisThrough["Hunter"] or {} 
+      itemEntry.bisThrough["Hunter"]["BeastMastery"] = itemEntry.bisThrough["Hunter"]["BeastMastery"] or -5
+      itemEntry.bisThrough["Hunter"]["Marksman"] = itemEntry.bisThrough["Hunter"]["Marksman"] or -5
+      itemEntry.bisThrough["Hunter"]["RDPS"] = itemEntry.bisThrough["Hunter"]["RDPS"] or -5
+      itemEntry.bisThrough["Hunter"]["Survival"] = itemEntry.bisThrough["Hunter"]["Survival"] or -5
+      itemEntry.bisThrough["Shaman"] = itemEntry.bisThrough["Shaman"] or {} 
+      itemEntry.bisThrough["Shaman"]["RDPS"] = itemEntry.bisThrough["Shaman"]["RDPS"] or -5
+      itemEntry.bisThrough["Shaman"]["Elemental"] = itemEntry.bisThrough["Shaman"]["Elemental"] or -5
+      itemEntry.bisThrough["Shaman"]["Healer"] = itemEntry.bisThrough["Shaman"]["Healer"] or -5
+      itemEntry.bisThrough["Shaman"]["Resto"] = itemEntry.bisThrough["Shaman"]["Resto"] or -5
+      itemEntry.bisThrough["Shaman"]["MDPS"] = itemEntry.bisThrough["Shaman"]["MDPS"] or -5
+      itemEntry.bisThrough["Shaman"]["Hybrid"] = itemEntry.bisThrough["Shaman"]["Hybrid"] or -5
+      itemEntry.bisThrough["Shaman"]["Enhancement"] = itemEntry.bisThrough["Shaman"]["Enhancement"] or -5
+      itemEntry.bisThrough["Druid"] = itemEntry.bisThrough["Druid"] or {} 
+      itemEntry.bisThrough["Druid"]["RDPS"] = itemEntry.bisThrough["Druid"]["RDPS"] or -5
+      itemEntry.bisThrough["Druid"]["Tank"] = itemEntry.bisThrough["Druid"]["Tank"] or -5
+      itemEntry.bisThrough["Druid"]["FeralDPS"] = itemEntry.bisThrough["Druid"]["FeralDPS"] or -5
+      itemEntry.bisThrough["Druid"]["Healer"] = itemEntry.bisThrough["Druid"]["Healer"] or -5
+      itemEntry.bisThrough["Druid"]["Resto"] = itemEntry.bisThrough["Druid"]["Resto"] or -5
+      itemEntry.bisThrough["Druid"]["MDPS"] = itemEntry.bisThrough["Druid"]["MDPS"] or -5
+      itemEntry.bisThrough["Druid"]["Balance"] = itemEntry.bisThrough["Druid"]["Balance"] or -5
+      itemEntry.bisThrough["Druid"]["FeralTank"] = itemEntry.bisThrough["Druid"]["FeralTank"] or -5
+      itemEntry.bisThrough["Rogue"] = itemEntry.bisThrough["Rogue"] or {} 
+      itemEntry.bisThrough["Rogue"]["Mace"] = itemEntry.bisThrough["Rogue"]["Mace"] or -5
+      itemEntry.bisThrough["Rogue"]["MDPS"] = itemEntry.bisThrough["Rogue"]["MDPS"] or -5
+      itemEntry.bisThrough["Rogue"]["Sword"] = itemEntry.bisThrough["Rogue"]["Sword"] or -5
+      itemEntry.bisThrough["Rogue"]["Dagger"] = itemEntry.bisThrough["Rogue"]["Dagger"] or -5
+      itemEntry.bisThrough["Priest"] = itemEntry.bisThrough["Priest"] or {} 
+      itemEntry.bisThrough["Priest"]["RDPS"] = itemEntry.bisThrough["Priest"]["RDPS"] or -5
+      itemEntry.bisThrough["Priest"]["Holy"] = itemEntry.bisThrough["Priest"]["Holy"] or -5
+      itemEntry.bisThrough["Priest"]["Healer"] = itemEntry.bisThrough["Priest"]["Healer"] or -5
+      itemEntry.bisThrough["Priest"]["HolyShadowweave"] = itemEntry.bisThrough["Priest"]["HolyShadowweave"] or -5
+      itemEntry.bisThrough["Priest"]["DiscHoly"] = itemEntry.bisThrough["Priest"]["DiscHoly"] or -5
+      itemEntry.bisThrough["Priest"]["Shadow"] = itemEntry.bisThrough["Priest"]["Shadow"] or -5
+      itemEntry.bisThrough["Warlock"] = itemEntry.bisThrough["Warlock"] or {} 
+      itemEntry.bisThrough["Warlock"]["RDPS"] = itemEntry.bisThrough["Warlock"]["RDPS"] or -5
+      itemEntry.bisThrough["Warlock"]["Destruction"] = itemEntry.bisThrough["Warlock"]["Destruction"] or -5
+      itemEntry.bisThrough["Warlock"]["Demonology"] = itemEntry.bisThrough["Warlock"]["Demonology"] or -5
+      itemEntry.bisThrough["Warlock"]["SMRuin"] = itemEntry.bisThrough["Warlock"]["SMRuin"] or -5
+      itemEntry.bisThrough["Warlock"]["Affliction"] = itemEntry.bisThrough["Warlock"]["Affliction"] or -5
+      itemEntry.bisThrough["Mage"] = itemEntry.bisThrough["Mage"] or {} 
+      itemEntry.bisThrough["Mage"]["RDPS"] = itemEntry.bisThrough["Mage"]["RDPS"] or -5
+      itemEntry.bisThrough["Mage"]["Elementalist"] = itemEntry.bisThrough["Mage"]["Elementalist"] or -5
+      itemEntry.bisThrough["Mage"]["APFrost"] = itemEntry.bisThrough["Mage"]["APFrost"] or -5
+      itemEntry.bisThrough["Mage"]["DeepFire"] = itemEntry.bisThrough["Mage"]["DeepFire"] or -5
+      itemEntry.bisThrough["Mage"]["WintersChill"] = itemEntry.bisThrough["Mage"]["WintersChill"] or -5
+      itemEntry.bisThrough["Mage"]["POMPyro"] = itemEntry.bisThrough["Mage"]["POMPyro"] or -5
+      BisMatrix[entryId] = itemEntry
     end
-
-    --fill in default values
-    itemEntry.bisThrough["Warrior"] = itemEntry.bisThrough["Warrior"] or {} 
-    itemEntry.bisThrough["Warrior"]["Arms"] = itemEntry.bisThrough["Warrior"]["Arms"] or -5
-    itemEntry.bisThrough["Warrior"]["Tank"] = itemEntry.bisThrough["Warrior"]["Tank"] or -5
-    itemEntry.bisThrough["Warrior"]["OT"] = itemEntry.bisThrough["Warrior"]["OT"] or -5
-    itemEntry.bisThrough["Warrior"]["FuryProt"] = itemEntry.bisThrough["Warrior"]["FuryProt"] or -5
-    itemEntry.bisThrough["Warrior"]["Prot"] = itemEntry.bisThrough["Warrior"]["Prot"] or -5
-    itemEntry.bisThrough["Warrior"]["MDPS"] = itemEntry.bisThrough["Warrior"]["MDPS"] or -5
-    itemEntry.bisThrough["Warrior"]["1hFury"] = itemEntry.bisThrough["Warrior"]["1hFury"] or -5
-    itemEntry.bisThrough["Warrior"]["2hFury"] = itemEntry.bisThrough["Warrior"]["2hFury"] or -5
-    itemEntry.bisThrough["Paladin"] = itemEntry.bisThrough["Paladin"] or {} 
-    itemEntry.bisThrough["Paladin"]["Tank"] = itemEntry.bisThrough["Paladin"]["Tank"] or -5
-    itemEntry.bisThrough["Paladin"]["Healer"] = itemEntry.bisThrough["Paladin"]["Healer"] or -5
-    itemEntry.bisThrough["Paladin"]["MDPS"] = itemEntry.bisThrough["Paladin"]["MDPS"] or -5
-    itemEntry.bisThrough["Paladin"]["OT"] = itemEntry.bisThrough["Paladin"]["OT"] or -5
-    itemEntry.bisThrough["Paladin"]["Prot"] = itemEntry.bisThrough["Paladin"]["Prot"] or -5
-    itemEntry.bisThrough["Paladin"]["Ret"] = itemEntry.bisThrough["Paladin"]["Ret"] or -5
-    itemEntry.bisThrough["Paladin"]["Holy"] = itemEntry.bisThrough["Paladin"]["Holy"] or -5
-    itemEntry.bisThrough["Hunter"] = itemEntry.bisThrough["Hunter"] or {} 
-    itemEntry.bisThrough["Hunter"]["BeastMastery"] = itemEntry.bisThrough["Hunter"]["BeastMastery"] or -5
-    itemEntry.bisThrough["Hunter"]["Marksman"] = itemEntry.bisThrough["Hunter"]["Marksman"] or -5
-    itemEntry.bisThrough["Hunter"]["RDPS"] = itemEntry.bisThrough["Hunter"]["RDPS"] or -5
-    itemEntry.bisThrough["Hunter"]["Survival"] = itemEntry.bisThrough["Hunter"]["Survival"] or -5
-    itemEntry.bisThrough["Shaman"] = itemEntry.bisThrough["Shaman"] or {} 
-    itemEntry.bisThrough["Shaman"]["RDPS"] = itemEntry.bisThrough["Shaman"]["RDPS"] or -5
-    itemEntry.bisThrough["Shaman"]["Elemental"] = itemEntry.bisThrough["Shaman"]["Elemental"] or -5
-    itemEntry.bisThrough["Shaman"]["Healer"] = itemEntry.bisThrough["Shaman"]["Healer"] or -5
-    itemEntry.bisThrough["Shaman"]["Resto"] = itemEntry.bisThrough["Shaman"]["Resto"] or -5
-    itemEntry.bisThrough["Shaman"]["MDPS"] = itemEntry.bisThrough["Shaman"]["MDPS"] or -5
-    itemEntry.bisThrough["Shaman"]["Hybrid"] = itemEntry.bisThrough["Shaman"]["Hybrid"] or -5
-    itemEntry.bisThrough["Shaman"]["Enhancement"] = itemEntry.bisThrough["Shaman"]["Enhancement"] or -5
-    itemEntry.bisThrough["Druid"] = itemEntry.bisThrough["Druid"] or {} 
-    itemEntry.bisThrough["Druid"]["RDPS"] = itemEntry.bisThrough["Druid"]["RDPS"] or -5
-    itemEntry.bisThrough["Druid"]["Tank"] = itemEntry.bisThrough["Druid"]["Tank"] or -5
-    itemEntry.bisThrough["Druid"]["FeralDPS"] = itemEntry.bisThrough["Druid"]["FeralDPS"] or -5
-    itemEntry.bisThrough["Druid"]["Healer"] = itemEntry.bisThrough["Druid"]["Healer"] or -5
-    itemEntry.bisThrough["Druid"]["Resto"] = itemEntry.bisThrough["Druid"]["Resto"] or -5
-    itemEntry.bisThrough["Druid"]["MDPS"] = itemEntry.bisThrough["Druid"]["MDPS"] or -5
-    itemEntry.bisThrough["Druid"]["Balance"] = itemEntry.bisThrough["Druid"]["Balance"] or -5
-    itemEntry.bisThrough["Druid"]["FeralTank"] = itemEntry.bisThrough["Druid"]["FeralTank"] or -5
-    itemEntry.bisThrough["Rogue"] = itemEntry.bisThrough["Rogue"] or {} 
-    itemEntry.bisThrough["Rogue"]["Mace"] = itemEntry.bisThrough["Rogue"]["Mace"] or -5
-    itemEntry.bisThrough["Rogue"]["MDPS"] = itemEntry.bisThrough["Rogue"]["MDPS"] or -5
-    itemEntry.bisThrough["Rogue"]["Sword"] = itemEntry.bisThrough["Rogue"]["Sword"] or -5
-    itemEntry.bisThrough["Rogue"]["Dagger"] = itemEntry.bisThrough["Rogue"]["Dagger"] or -5
-    itemEntry.bisThrough["Priest"] = itemEntry.bisThrough["Priest"] or {} 
-    itemEntry.bisThrough["Priest"]["RDPS"] = itemEntry.bisThrough["Priest"]["RDPS"] or -5
-    itemEntry.bisThrough["Priest"]["Holy"] = itemEntry.bisThrough["Priest"]["Holy"] or -5
-    itemEntry.bisThrough["Priest"]["Healer"] = itemEntry.bisThrough["Priest"]["Healer"] or -5
-    itemEntry.bisThrough["Priest"]["HolyShadowweave"] = itemEntry.bisThrough["Priest"]["HolyShadowweave"] or -5
-    itemEntry.bisThrough["Priest"]["DiscHoly"] = itemEntry.bisThrough["Priest"]["DiscHoly"] or -5
-    itemEntry.bisThrough["Priest"]["Shadow"] = itemEntry.bisThrough["Priest"]["Shadow"] or -5
-    itemEntry.bisThrough["Warlock"] = itemEntry.bisThrough["Warlock"] or {} 
-    itemEntry.bisThrough["Warlock"]["RDPS"] = itemEntry.bisThrough["Warlock"]["RDPS"] or -5
-    itemEntry.bisThrough["Warlock"]["Destruction"] = itemEntry.bisThrough["Warlock"]["Destruction"] or -5
-    itemEntry.bisThrough["Warlock"]["Demonology"] = itemEntry.bisThrough["Warlock"]["Demonology"] or -5
-    itemEntry.bisThrough["Warlock"]["SMRuin"] = itemEntry.bisThrough["Warlock"]["SMRuin"] or -5
-    itemEntry.bisThrough["Warlock"]["Affliction"] = itemEntry.bisThrough["Warlock"]["Affliction"] or -5
-    itemEntry.bisThrough["Mage"] = itemEntry.bisThrough["Mage"] or {} 
-    itemEntry.bisThrough["Mage"]["RDPS"] = itemEntry.bisThrough["Mage"]["RDPS"] or -5
-    itemEntry.bisThrough["Mage"]["Elementalist"] = itemEntry.bisThrough["Mage"]["Elementalist"] or -5
-    itemEntry.bisThrough["Mage"]["APFrost"] = itemEntry.bisThrough["Mage"]["APFrost"] or -5
-    itemEntry.bisThrough["Mage"]["DeepFire"] = itemEntry.bisThrough["Mage"]["DeepFire"] or -5
-    itemEntry.bisThrough["Mage"]["WintersChill"] = itemEntry.bisThrough["Mage"]["WintersChill"] or -5
-    itemEntry.bisThrough["Mage"]["POMPyro"] = itemEntry.bisThrough["Mage"]["POMPyro"] or -5
-    BisMatrix[entryId] = itemEntry
-  
   end
   function bsloot:doRecalcEPVal(eventId)
     eventData = bsloot:getEventData(eventId, bsloot.statics.eventType.EP_VAL)
-    local epType = eventData.epType
-    local epReason = eventData.epReason
-    local raid = eventData.raid
-    local ep = eventData.ep
-    local entryId = bsloot:buildEpGpEventReasonKey(bsloot.statics.eventType.EP_VAL, epType, epReason)
-    
-    local priceChange = EPValues[entryId] and EPValues[entryId] ~= nil and EPValues[entryId].ep ~= ep
-    local oldValue = nil
-    if(EPValues[entryId]) then oldValue = EPValues[entryId].ep end
+    if(eventData ~= nil) then
+      local epType = eventData.epType
+      local epReason = eventData.epReason
+      local raid = eventData.raid
+      local ep = eventData.ep
+      local entryId = bsloot:buildEpGpEventReasonKey(bsloot.statics.eventType.EP_VAL, epType, epReason)
+      
+      local priceChange = EPValues[entryId] and EPValues[entryId] ~= nil and EPValues[entryId].ep ~= ep
+      local oldValue = nil
+      if(EPValues[entryId]) then oldValue = EPValues[entryId].ep end
 
-    local itemEntry = {}
-    itemEntry.ep = ep
-    itemEntry.epType = epType
-    itemEntry.epReason = epReason
-    itemEntry.raid = raid
-    EPValues[entryId] = itemEntry
-    
-    if(priceChange) then
-      bsloot:recalcEpReceivers(entryId, itemEntry, oldValue)
+      local itemEntry = {}
+      itemEntry.ep = ep
+      itemEntry.epType = epType
+      itemEntry.epReason = epReason
+      itemEntry.raid = raid
+      EPValues[entryId] = itemEntry
+      
+      --No longer retroactive
+      -- if(priceChange) then
+      --   bsloot:recalcEpReceivers(entryId, itemEntry, oldValue)
+      -- end
     end
   end
 
@@ -4037,7 +4388,7 @@ end
               end
             end
           else
-            bsloot:warnPrint("Can't adjust value perhaps events came in out of order. Suggest rebuilding from eventlog", 2)
+            bsloot:warnPrint("Can't adjust value perhaps events came in out of order. Suggest rebuilding from eventlog", bsloot.statics.LOGS.SYNC)
           end
         end
       end
@@ -4089,15 +4440,17 @@ end
       end
     end
     local guildPct = numGuild / groupSize
-    local guildRaid = raid and groupSize > 10 and guildPct >= 0.5
-    local guildGroup = group and groupSize <= 11 and guildPct >= 1
-    return guildRaid, raid, group, guildGroup
+    local guildRaid = isRaid and groupSize > 10 and guildPct >= 0.5
+    local guildGroup = isGroup and groupSize <= 11 and guildPct >= 1
+    return guildRaid, isRaid, isGroup, guildGroup
   end
 
   --BEGIN bulk import
   function bsloot:importEvents(csvText)
     local lines = bsloot:split(csvText, "\n")
-    local date = nil
+    local raidStartDateTime = nil
+    local raidEndDateTime = nil
+    local raidEventDateTime = nil
     local imported = 0
     local epEvents = {}
     local raidName = ""
@@ -4107,7 +4460,7 @@ end
       local sLine = bsloot:split(line, "|")
       if(lineNum == 1) then
         local dateString = sLine[2]
-        date = bsloot:getTimeFromDateString(dateString)
+        raidStartDateTime, raidEventDateTime, raidEndDateTime  = bsloot:getRaidTimeFromDateString(dateString)
         raidName = raidName .. raidNameDiv .. dateString
         raidNameDiv = " "
       elseif (lineNum == 2) then
@@ -4116,8 +4469,14 @@ end
         raidNameDiv = " "
       elseif (lineNum > 3) then
         local charName = strtrim(sLine[1] or "")
-        if(not date or date == nil) then
-          message("Date not found, aborting import")
+        if(not raidStartDateTime or raidStartDateTime == nil) then
+          message("raidStartDateTime not found, aborting import")
+          return
+        elseif(not raidEventDateTime or raidEventDateTime == nil) then
+          message("raidEventDateTime not found, aborting import")
+          return
+        elseif(not raidEndDateTime or raidEndDateTime == nil) then
+          message("raidEndDateTime not found, aborting import")
           return
         elseif (string.find(line, "|") ~= 1 and charName and charName ~= nil and charName ~= "") then
           local lineItemPlayerName = strtrim(sLine[1], "[] \t\n\r")
@@ -4149,43 +4508,47 @@ end
             else
               charName = strsub(charName, 1, parenInd-1)
             end
-            bsloot:debugPrint("Alt detected: "..charName, 3)
+            bsloot:debugPrint("Alt detected: "..charName, bsloot.statics.LOGS.ROSTER)
           end
           if(string.find(lineItemNotes:lower(), "shard") ~= nil) then
             amount = 0
           end
           if(lineItemType == bsloot.statics.eventSubType.GP) then
-            
-            local subReason = reason
-            if(string.find(reason, "%[")) then
-              for itemKey, item in pairs(ItemGPCost) do
-                if(item.importedName and item.importedName ~= nil and item.importedName == reason) then
-                  subReason = GetItemInfoInstant(item.link)
-                  reason = bsloot:buildEpGpEventReasonKey(bsloot.statics.eventType.EPGP, bsloot.statics.EPGP.LOOT, subReason)
-                  break
-                end
+            local success, err = pcall(function()
+              local subReason = reason
+              if(string.find(reason, "%[")) then
+                reason = bsloot:buildEpGpEventReasonKey(bsloot.statics.eventType.EPGP, bsloot.statics.EPGP.LOOT, bsloot:findItemIdByImportedName(reason))
               end
-            end
-            --Do for 1 char
-            local characters = {}
-            table.insert(characters, charName)
-            local eventData, eventType = bsloot:buildEventSaveEpGpEvent(characters, lineItemType, amount, bsloot.statics.EPGP.LOOT, subReason)
-            bsloot:recordEvent(eventType, eventData, date)
+              --Do for 1 char
+              local characters = {}
+              table.insert(characters, charName)
+              local eventData, eventType = bsloot:buildEventSaveEpGpEvent(characters, lineItemType, amount, bsloot.statics.EPGP.LOOT, subReason)
+              bsloot:recordEvent(eventType, eventData, raidEventDateTime)
 
+            end)
+            if(not success) then
+              bsloot:warnPrint(string.format("Failed to import line: %s", line), bsloot.statics.LOGS.BULK)
+            end
           else
             if(not epEvents[reason] or epEvents[reason] == nil) then
               epEvents[reason] = {}
-              if(not epEvents[reason][amount] or epEvents[reason][amount] == nil) then
-                epEvents[reason][amount] = {}
-              end
             end
-            bsloot:removePrint("hmmm..."..reason.."..."..amount.." for "..charName)
-            table.insert(epEvents[reason][amount], charName)
+            if(not epEvents[reason][amount] or epEvents[reason][amount] == nil) then
+              epEvents[reason][amount] = {}
+            end
+            local success, err = pcall(function() table.insert(epEvents[reason][amount], charName) end)
+            if(not success) then
+              bsloot:errorPrint(string.format("Failed loading events, somehow epEvent subtable is nil: %s.%s for %s", reason, amount, charName), bsloot.statics.LOGS.BULK)
+              bsloot:debugPrint(string.format("epEvents[reason] = %s", bsloot:tableToString(epEvents[reason])), {logicOp="AND", values={bsloot.statics.LOGS.DEV, bsloot.statics.LOGS.BULK}})
+              bsloot:debugPrint(string.format("epEvents[reason][amount] = %s", bsloot:tableToString(epEvents[reason][amount])), {logicOp="AND", values={bsloot.statics.LOGS.DEV, bsloot.statics.LOGS.BULK}})
+              error(err)
+            end
           end
                     
           imported = imported + 1
+          
         else
-          bsloot:debugPrint("Ignoring invalid line: "..line, 3)
+          bsloot:debugPrint("Ignoring invalid line: "..line, bsloot.statics.LOGS.BULK)
         end
       end
     end
@@ -4200,11 +4563,11 @@ end
           reasonChars[c] = true
         end
         local eventData, eventType = bsloot:buildEventSaveEpGpEvent(characters, bsloot.statics.eventSubType.EP, amount, epCategory, subReason)
-        bsloot:recordEvent(eventType, eventData, date)
+        bsloot:recordEvent(eventType, eventData, raidEventDateTime)
       end
 
       local eventData, eventType = bsloot:buildEventSaveRaidStartEvent(bsloot:trueOnlyMapToArray(reasonChars), raidLoc, raidName)
-      raidId = bsloot:recordEvent(eventType, eventData, date)
+      raidId = bsloot:recordEvent(eventType, eventData, raidStartDateTime)
       
     end
     
@@ -4297,7 +4660,7 @@ end
         end
       end
       local eventData, eventType = bsloot:buildEventSaveRaidEndEvent(bsloot:trueOnlyMapToArray(reasonChars), raidId)
-      bsloot:recordEvent(eventType, eventData, date)
+      bsloot:recordEvent(eventType, eventData, raidEndDateTime)
     end
     for reason, amountMap in pairs(epEvents) do
       if(reason ~= "bonus:OnTime") then
@@ -4312,21 +4675,40 @@ end
         
         local reasonChars = {}
         for amount, characters in pairs(amountMap) do
-
+          local splitChars = {}
           for _, c in ipairs(characters) do
             reasonChars[c] = true
+            if(not splitChars[c] or splitChars[c] == nil) then
+              splitChars[c] = 0
+            end
+            splitChars[c] = splitChars[c] + 1
           end
-          local eventData, eventType = bsloot:buildEventSaveEpGpEvent(characters, bsloot.statics.eventSubType.EP, amount, epCategory, subReason)
-          bsloot:recordEvent(eventType, eventData, date)
+          while(bsloot:tablelength(splitChars) > 0) do
+            local count = 0
+            local builtList = {}
+            for char, charCount in pairs(splitChars) do
+              if(count == bsloot:getRaidSize(raidLoc)) then
+                break
+              end
+              count = count + 1
+              table.insert(builtList, char)
+              splitChars[char] = charCount - 1
+              if(splitChars[char] <= 0) then
+                splitChars[char] = nil
+              end
+            end 
+            local eventData, eventType = bsloot:buildEventSaveEpGpEvent(builtList, bsloot.statics.eventSubType.EP, amount, epCategory, subReason)
+            bsloot:recordEvent(eventType, eventData, raidEventDateTime)
+          end
         end
         if((epCategory == bsloot.statics.EPGP.BOSSKILL and not epEvents["progression:"..subReason]) or (epCategory == bsloot.statics.EPGP.PROGRESSION)) then
 
           local eventData, eventType = bsloot:buildEventSaveRaidBossAttempt(bsloot:trueOnlyMapToArray(reasonChars), raidId, bossName)
-          bsloot:recordEvent(eventType, eventData, date)
+          bsloot:recordEvent(eventType, eventData, raidEventDateTime)
         end
       end
     end            
-    bsloot:debugPrint("Imported Events Total: " ..imported, 2)
+    bsloot:debugPrint("Imported Events Total: " ..imported, bsloot.statics.LOGS.BULK)
   end
   
 
@@ -4362,11 +4744,14 @@ end
                   local itemKey = bsloot:buildEpGpEventReasonKey(bsloot.statics.eventType.GP_VAL, bsloot.statics.EPGP.LOOT, itemId)
                   if(overwrite or not ItemGPCost[itemKey] or ItemGPCost[itemKey] == nil) then
 
+                    if(itemEquipLoc == "") then
+                      itemEquipLoc = " "
+                    end
                     local eventData, eventType = bsloot:buildEventSaveItemGp(itemId, lineItemGp, itemEquipLoc, lineItemRaid, lineItemName, itemLink, lineItemSlot)
                     bsloot:recordEvent(eventType, eventData)
                     gpImported = gpImported + 1
                   else
-                    bsloot:debugPrint("Processing "..itemLink.." from line: "..line, 6)
+                    bsloot:debugPrint("Processing "..itemLink.." from line: "..line, bsloot.statics.LOGS.BULK)
                   end
                   
                   itemKey = bsloot:buildEpGpEventReasonKey(bsloot.statics.eventType.BIS_MATRIX, bsloot.statics.EPGP.LOOT, itemId)
@@ -4443,8 +4828,8 @@ end
                     bisThrough["Rogue"]["Dagger"] = prioRogueMDPSDagger
                     bisThrough["Rogue"]["Mace"] = prioRogueMDPSMace
                     bisThrough["Priest"] = {}
-                    bisThrough["Priest"]["Healer"] = math.max(prioPriestHealerHoly, prioPriestHealerDiscHoly, prioPriestUtilityHolyShadowweave)
-                    bisThrough["Priest"]["RDPS"] = math.max(prioPriestRDPSShadow)
+                    bisThrough["Priest"]["Healer"] = math.max(prioPriestHealerHoly, prioPriestHealerDiscHoly)
+                    bisThrough["Priest"]["RDPS"] = math.max(prioPriestRDPSShadow,prioPriestUtilityHolyShadowweave)
                     bisThrough["Priest"]["Holy"] = prioPriestHealerHoly
                     bisThrough["Priest"]["DiscHoly"] = prioPriestHealerDiscHoly
                     bisThrough["Priest"]["Shadow"] = prioPriestRDPSShadow
@@ -4467,24 +4852,24 @@ end
                     bsloot:recordEvent(eventType, eventData)
                     bisImported = bisImported + 1
                   else
-                    bsloot:debugPrint("Processing "..itemLink.." from line: "..line, 6)
+                    bsloot:debugPrint("Processing "..itemLink.." from line: "..line, bsloot.statics.LOGS.BULK)
                   end
                 else
                   missed = missed + 1
-                  bsloot:debugPrint("Failed to find item: from line: "..line, 2)
+                  bsloot:debugPrint("Failed to find item: from line: "..line, bsloot.statics.LOGS.BULK)
                 end
               end)
           else
-            bsloot:debugPrint("Ignoring invalid line: "..line, 3)
+            bsloot:debugPrint("Ignoring invalid line: "..line, bsloot.statics.LOGS.BULK)
           end
         end
       end
     end
-    bsloot:debugPrint("Imported Item GPs Total: " ..gpImported, 2)
-    bsloot:debugPrint("Imported Item BisMatrix Total: " ..bisImported, 2)
-    bsloot:debugPrint("Total items processed: " ..total, 2)
-    bsloot:debugPrint("Missed items: " ..missed, 2)
-    bsloot:debugPrint("Found items: " ..found, 2)
+    bsloot:debugPrint("Imported Item GPs Total: " ..gpImported, bsloot.statics.LOGS.BULK)
+    bsloot:debugPrint("Imported Item BisMatrix Total: " ..bisImported, bsloot.statics.LOGS.BULK)
+    bsloot:debugPrint("Total items processed: " ..total, bsloot.statics.LOGS.BULK)
+    bsloot:debugPrint("Missed items: " ..missed, bsloot.statics.LOGS.BULK)
+    bsloot:debugPrint("Found items: " ..found, bsloot.statics.LOGS.BULK)
     if(gpImported > 0 or bisImported > 0) then
       local browser = bsloot:GetModule(addonName.."_browser")
       if browser then
@@ -4530,20 +4915,20 @@ end
                   imported = imported + 1
                 else
                   missed = missed + 1
-                  bsloot:debugPrint("Failed to find item: from line: "..line, 2)
+                  bsloot:debugPrint("Failed to find item: from line: "..line, bsloot.statics.LOGS.BULK)
                 end
               end)
           else
-            bsloot:debugPrint("Ignoring invalid line: "..line, 3)
+            bsloot:debugPrint("Ignoring invalid line: "..line, bsloot.statics.LOGS.BULK)
           end
         end
       end
     end
-    bsloot:debugPrint("New Items Total: " ..newItems, 2)
-    bsloot:debugPrint("Imported Items Total: " ..imported, 2)
-    bsloot:debugPrint("Total items processed: " ..total, 2)
-    bsloot:debugPrint("Missed items: " ..missed, 2)
-    bsloot:debugPrint("Found items: " ..found, 2)
+    bsloot:debugPrint("New Items Total: " ..newItems, bsloot.statics.LOGS.BULK)
+    bsloot:debugPrint("Imported Items Total: " ..imported, bsloot.statics.LOGS.BULK)
+    bsloot:debugPrint("Total items processed: " ..total, bsloot.statics.LOGS.BULK)
+    bsloot:debugPrint("Missed items: " ..missed, bsloot.statics.LOGS.BULK)
+    bsloot:debugPrint("Found items: " ..found, bsloot.statics.LOGS.BULK)
     if(imported > 0) then
       local browser = bsloot:GetModule(addonName.."_browser")
       if browser then
@@ -4581,14 +4966,14 @@ end
             imported = imported + 1
             
           else
-            bsloot:debugPrint("Ignoring invalid line: "..line, 3)
+            bsloot:debugPrint("Ignoring invalid line: "..line, bsloot.statics.LOGS.BULK)
           end
         end
       end
     end
-    bsloot:debugPrint("New EP Values: " ..newItems, 2)
-    bsloot:debugPrint("Imported EP Values Total: " ..imported, 2)
-    bsloot:debugPrint("Total EP Values processed: " ..total, 2)
+    bsloot:debugPrint("New EP Values: " ..newItems, bsloot.statics.LOGS.BULK)
+    bsloot:debugPrint("Imported EP Values Total: " ..imported, bsloot.statics.LOGS.BULK)
+    bsloot:debugPrint("Total EP Values processed: " ..total, bsloot.statics.LOGS.BULK)
   end
 
   function bsloot:importCharRoles(csvText, overwrite)
@@ -4610,24 +4995,24 @@ end
               bsloot:recordEvent(eventType, eventData)
               imported = imported + 1
             else
-              bsloot:debugPrint("Skipping existing "..lineItemCharName.." from line: "..line, 2)
+              bsloot:debugPrint("Skipping existing "..lineItemCharName.." from line: "..line, bsloot.statics.LOGS.BULK)
             end
             
           else
-            bsloot:debugPrint("Ignoring invalid line: "..line, 3)
+            bsloot:debugPrint("Ignoring invalid line: "..line, bsloot.statics.LOGS.BULK)
           end
         end
       end
       
     end
-    bsloot:debugPrint("Imported CharRoles Total: " ..imported, 2)
+    bsloot:debugPrint("Imported CharRoles Total: " ..imported, bsloot.statics.LOGS.BULK)
   end
 
   --END bulk import
 
   --BEGIN auto EP
   function bsloot:getEpForEncounter(combatInfo) 
-    -- bsloot:debugPrint("Detected DBM_Kill Event of: "..bsloot:tableToString(combatInfo), 5)
+    -- bsloot:debugPrint("Detected DBM_Kill Event of: "..bsloot:tableToString(combatInfo), bsloot.statics.LOGS.AUTODETECT)
     local bossName = combatInfo.name;
     local epKey = bsloot:buildEpGpEventReasonKey(bsloot.statics.eventType.EP_VAL, bsloot.statics.EPGP.BOSSKILL, bossName)
     local epEntry = EPValues[epKey]
@@ -4635,7 +5020,7 @@ end
     if(epEntry and epEntry ~= nil) then
       ep = epEntry.ep
     else
-      bsloot:warnPrint("No EP entry found for ".. epKey)
+      bsloot:warnPrint("No EP entry found for ".. epKey, bsloot.statics.LOGS.EPGP)
     end
     local progrssionEp = bsloot:getProgressionEp(bossName)
     return ep, progrssionEp, epKey
@@ -4644,29 +5029,31 @@ end
     local progrssionEp = 0
     if(bsloot:getNumKills(bossName) < bsloot.MaxProgressionKills) then -- the < is assuming the kill count is checked PRIOR to recording the kill event, if after change to <=
       local progressionEpKey = bsloot:buildEpGpEventReasonKey(bsloot.statics.eventType.EP_VAL, bsloot.statics.EPGP.PROGRESSION, bossName)
-      local epEntry = EPValues[epKey]
+      local epEntry = EPValues[progressionEpKey]
       if(epEntry and epEntry ~= nil) then
         progrssionEp = epEntry.ep
       else
-        bsloot:warnPrint("No EP entry found for ".. epKey)
+        bsloot:warnPrint("No EP entry found for ".. progressionEpKey, bsloot.statics.LOGS.EPGP)
       end
     end
     return progrssionEp
   end
   bsloot.MaxProgressionKills = 3 -- number of kills to give progression EP for --TODO configurable?
   function bsloot:getNumKills(bossName)
-    if(not BossKillCounter[bossName] or BossKillCounter[bossName] == nil) then
+    local isNew = false
+    if(BossKillCounter[bossName] == nil or type(BossKillCounter[bossName]) ~= "number") then
+      isNew = true
       BossKillCounter[bossName] = 0
-      for _, event in SyncEvents do
+      for eventId, event in pairs(SyncEvents) do
         if(event.type == bsloot.statics.eventType.EPGP) then
-          local data = EventParsers[event.version][event.type].fromString(event.dataString)
+          local eventData = bsloot:getEventData(eventId, event.type)
           if(eventData.reason == bsloot.statics.EPGP.BOSSKILL and eventData.subReason == bossName) then
             BossKillCounter[bossName] = BossKillCounter[bossName] + 1
           end
         end
       end
     end
-    return BossKillCounter[bossName]
+    return BossKillCounter[bossName], isNew
   end
 
   --END auto EP
@@ -4680,7 +5067,7 @@ end
     end)
   end
   
-  function bsloot:buildEventChangeMainChar(toChar, fromChar, gpVal, epPenalty)
+  function bsloot:buildEventChangeMainChar(fromChar, toChar, gpVal, epPenalty)
     local eventData = {}
     eventData.toChar = toChar
     eventData.fromChar = fromChar
@@ -4705,7 +5092,6 @@ end
     eventData.importedName = importedName
     eventData.importedSlot = importedSlot
     eventData.itemLink = itemLink
-    
     return eventData, bsloot.statics.eventType.GP_VAL
   end
   function bsloot:buildEventSaveItemBisMatrix(itemId, bisThrough, subType)
@@ -4763,28 +5149,76 @@ end
     
     return eventData, bsloot.statics.eventType.RAID
   end
+
   function bsloot:rebuildDataFromEventLog()
     local eventIds = {}
-    bsloot:warnPrint("Beginning full Data Reconstruction from Events")
-    for k, v in pairs(SyncEvents) do
-      table.insert(eventIds, k)
+    bsloot:warnPrint("Beginning full Data Reconstruction from Events", bsloot.statics.LOGS.EVENT)
+    local count = 0
+    for k, event in pairs(SyncEvents) do
+      if(not eventIds[event.type] or eventIds[event.type] == nil) then
+        eventIds[event.type] = {}
+      end
+      table.insert(eventIds[event.type], k)
+      count = count + 1
     end
-    table.sort(eventIds, function(a,b) 
-      return SyncEvents[a].epochSeconds < SyncEvents[b].epochSeconds
-    end)
-    bsloot:warnPrint("%d events sorted", #eventIds)
+    for _, subset in pairs(eventIds) do
+      table.sort(subset, function(a,b) 
+        return SyncEvents[a].epochSeconds < SyncEvents[b].epochSeconds
+      end)
+    end
+    bsloot:warnPrint(string.format("%d events sorted", count), bsloot.statics.LOGS.EVENT)
     bsloot:purgeNonEventData()
-    bsloot:warnPrint("Non event data purged")
-
+    bsloot:warnPrint("Non event data purged", bsloot.statics.LOGS.EVENT)
 
     local numRecalcd = 0
-    for _, eventId in eventIds do
-      bsloot:doRecalcEventId(eventId)
-      numRecalcd = numRecalcd + 1
+    local calculated = {}
+    numRecalcd = numRecalcd + bsloot:processAllEventsOfType(eventIds[bsloot.statics.eventType.CHAR_ROLE])
+    calculated[bsloot.statics.eventType.CHAR_ROLE] = true
+    numRecalcd = numRecalcd + bsloot:processAllEventsOfType(eventIds[bsloot.statics.eventType.SWITCH_MAIN])
+    calculated[bsloot.statics.eventType.SWITCH_MAIN] = true
+    numRecalcd = numRecalcd + bsloot:processAllEventsOfType(eventIds[bsloot.statics.eventType.EP_VAL])
+    calculated[bsloot.statics.eventType.EP_VAL] = true
+    numRecalcd = numRecalcd + bsloot:processAllEventsOfType(eventIds[bsloot.statics.eventType.GP_VAL])
+    calculated[bsloot.statics.eventType.GP_VAL] = true
+   
+    for type, events in pairs(eventIds) do
+      if(not calculated[type] or calculated[type] == false) then
+        numRecalcd = numRecalcd + bsloot:processAllEventsOfType(events)
+        calculated[type] = true
+      end
     end
-    bsloot:warnPrint(string.format("Completed full Data Reconstruction from %d Events", numRecalcd))
+
+    bsloot:correctForNonRealtimeDataLoad()
+
+    bsloot:warnPrint(string.format("Completed full Data Reconstruction from %d Events", numRecalcd), bsloot.statics.LOGS.EVENT)
 
   end
+  function bsloot:processAllEventsOfType(events, type)
+    
+    local numRecalcd = 0
+    if(events and events ~= nil) then
+      for _, eventId in ipairs(events) do
+        local success, err = pcall(function()
+          bsloot:doRecalcEventId(eventId)
+          numRecalcd = numRecalcd + 1
+        end)
+        if(not success) then
+          bsloot:warnPrint(string.format("Unable to include event in rebuild as it is corrupt: %s; err=\"%s\"", eventId, (err or "nil")), bsloot.statics.LOGS.EVENT)
+        end
+      end
+    end
+    return numRecalcd
+  end
+  function bsloot:correctForNonRealtimeDataLoad()
+    --Boss kill counts are based on the events in history when the first one is seen. could fix this by using a different "getKillCount" method in the getProgressionEp function instead of correcting it at
+    for bossName, count in pairs(BossKillCounter) do
+      if(count > 1) then
+        BossKillCounter[bossName] = count - 1
+      end
+    end
+
+  end
+
   --END event creation
 
   --BEGIN raid event management
@@ -4802,11 +5236,18 @@ end
     if(not raidLoc or raidLoc == nil) then
       raidLoc = GetZoneText()
     end
+    
     local eventData, eventType = bsloot:buildEventSaveRaidStartEvent(currentRoster, raidLoc, raidName)
     bsloot:recordEvent(eventType, eventData)
+    local raidMsg = string.format(L["Starting Raid: %s"],raidName)
+    bsloot:SendChat(raidMsg, bsloot.db.profile.chat.raidEvent)
     local epKey = bsloot:buildEpGpEventReasonKey(bsloot.statics.eventType.EP_VAL, bsloot.statics.EPGP.BONUS, bsloot.statics.EPGP.ON_TIME)
     local ep = EPValues[epKey]
-    bsloot:epToRaid(ep, bsloot.statics.EPGP.BONUS, bsloot.statics.EPGP.ON_TIME, false, currentRoster)
+    if(ep ~= nil) then
+      bsloot:epToRaid(ep.ep, bsloot.statics.EPGP.BONUS, bsloot.statics.EPGP.ON_TIME, false, currentRoster)
+    else
+      bsloot:errorPrint(string.format("No EP Value for key: \"%s\"", epKey), bsloot.statics.LOGS.EPGP)
+    end
   end
 
   bsloot.minDurationForIronman = 120 --TODO configurable?
@@ -4824,38 +5265,44 @@ end
     local currentRaidId = bsloot:getCurrentRaidId()
     local eventData, eventType = bsloot:buildEventSaveRaidEndEvent(currentRoster, raidLoc, raidName)
     local raidEndId = bsloot:recordEvent(eventType, eventData)
+    local raidMsg = string.format(L["Ending Raid: %s (raid event ID: %s)"],raidName, (currentRaidId or ""))
+    bsloot:SendChat(raidMsg, bsloot.db.profile.chat.raidEvent)
     --give EP for Ironman
     local raidDuration = bsloot:getRaidDuration(currentRaidId, raidEndId)
     if(raidDuration >= bsloot.minDurationForIronman) then
       local ironmanRoster = bsloot:getIronmanRoster(currentRaidId, raidEndId)
       local epKey = bsloot:buildEpGpEventReasonKey(bsloot.statics.eventType.EP_VAL, bsloot.statics.EPGP.BONUS, bsloot.statics.EPGP.IRONMAN)
       local ep = EPValues[epKey]
-      bsloot:epToRaid(ep, bsloot.statics.EPGP.BONUS, bsloot.statics.EPGP.IRONMAN, false, ironmanRoster, bsloot:getTsBefore(SyncEvents[raidEndId].epochSeconds, 10000))
+      bsloot:epToRaid(ep.ep, bsloot.statics.EPGP.BONUS, bsloot.statics.EPGP.IRONMAN, false, ironmanRoster, bsloot:getTsBefore(SyncEvents[raidEndId].epochSeconds, 10000))
     end
   end
-  function bsloot:getCurrentRaid(asOfTimestamp)
-    local currentRaidId = bsloot:getCurrentRaidId(asOfTimestamp)
-    if(currentRaidId and currentRaidId ~= nil) then
-      return RaidHistory[currentRaidId]
-    end
-  end
-  function bsloot:getIronmanRoster(currentRaidId)
-    local raid = RaidHistory[currentRaidId]
+  function bsloot:getIronmanRoster(currentRaidId, raidEndId)
     local tempIronmanRoster = {}
-    
-    local tempEndRoster = bsloot:arrayToTrueOnlyMap(raid.endRoster)
-
-    for _, charName in ipairs(raid.startRoster) do
-      if(tempEndRoster[charName]) then
+    if(not raidEndId or raidEndId == nil) then
+      _, raidEndId = bsloot:getRaidEndTime(raidId, raidEndId)
+    end
+    local startRaidEvent = bsloot:getEventData(currentRaidId, bsloot.statics.eventType.RAID)
+    local startRoster = startRaidEvent.characters
+    local startMap = bsloot:arrayToTrueOnlyMap(startRoster)
+    local endRaidEvent = bsloot:getEventData(raidEndId, bsloot.statics.eventType.RAID)
+    local endRoster = endRaidEvent.characters
+    local endMap = bsloot:arrayToTrueOnlyMap(endRoster)
+    for charName, _ in pairs(startMap) do
+      if(startMap[charName] and endMap[charName] and startMap[charName] ~= nil and endMap[charName] ~= nil) then
         tempIronmanRoster[charName] = true
       end
     end
-    for _, attempt in ipairs(raid.bossAttempts) do
-      local tempArrayRoster = bsloot:arrayToTrueOnlyMap(attempt.roster)
 
-      for charName, _ in pairs(tempIronmanRoster) do
-        if(not tempArrayRoster[charName] or tempArrayRoster[charName] == nil) then
-          tempIronmanRoster[charName] = nil
+    local raidEvents = bsloot:getRaidEvents(currentRaidId, raidEndId)
+    for eventId, event in ipairs(raidEvents) do
+      local eventData = bsloot:getEventData(eventId, event.type)
+      if(eventData.characters) then
+        local tempArrayRoster = bsloot:arrayToTrueOnlyMap(eventData.characters)
+
+        for charName, _ in pairs(tempIronmanRoster) do
+          if(not tempArrayRoster[charName] or tempArrayRoster[charName] == nil) then
+            tempIronmanRoster[charName] = nil
+          end
         end
       end
     end
@@ -4897,11 +5344,13 @@ end
     return bsloot:isInTimeWindow(beginTime, endTime, SyncEvents[eventId].epochSeconds)
   end
 
-  function bsloot:getRaidHighlights(raidId)
+  function bsloot:getRaidHighlights(raidId, raidEndId)
 
+    local endTime, raidEndId = bsloot:getRaidEndTime(raidId, raidEndId)
     local attendees = {}
     local raidEvents = {}
     local isEnded = false
+    local startTime = SyncEvents[raidId].epochSeconds
     raidEvents[raidId] = SyncEvents[raidId]
     eventData = bsloot:getEventData(raidId, bsloot.statics.eventType.RAID)
     for _, char in ipairs(eventData.characters) do
@@ -4909,16 +5358,18 @@ end
     end
 
     for eventId, event in pairs(SyncEvents) do
-      if(bsloot:isInTimeWindow(beginTime, endTime, event.epochSeconds) and eventId ~= raidId) then
+      if(bsloot:isInTimeWindow(startTime, endTime, event.epochSeconds) and eventId ~= raidId) then
         eventData = bsloot:getEventData(eventId, eventType)
-        if(event.type == bsloot.statics.eventType.RAID) then
-          if(eventData.raidId == raidId) then
-            if(eventData.subType == bsloot.statics.eventSubType.RAID_END) then
-              isEnded = true
-            end
-            raidEvents[eventId] = SyncEvents[eventId]
-            for _, char in ipairs(eventData.characters) do
-              attendees[char] = true
+        if(eventData ~= nil) then
+          if(event.type == bsloot.statics.eventType.RAID) then
+            if(eventData.raidId == raidId) then
+              if(eventData.subType == bsloot.statics.eventSubType.RAID_END) then
+                isEnded = true
+              end
+              raidEvents[eventId] = SyncEvents[eventId]
+              for _, char in ipairs(eventData.characters) do
+                attendees[char] = true
+              end
             end
           end
         end
@@ -4927,13 +5378,15 @@ end
     return attendees, raidEvents, isEnded
   end
 
-  function bsloot:getRaidEvents(raidId)
-    local attendees, raidEvents = bsloot:getRaidAttendeesAndRaidEvents(raidId)
-    local startTime = SyncEvents[raidStartId].epochSeconds
-    local endTime = bsloot:getRaidEndTime(raidStartId, raidEndId, assumeOngoing)
+  function bsloot:getRaidEvents(raidId, raidEndId, includeMiscTypes)
+    local endTime, raidEndId = bsloot:getRaidEndTime(raidId, raidEndId)
+    local startTime = SyncEvents[raidId].epochSeconds
+    local attendees = bsloot:getRaidAttendees(raidId, raidEndId)
+    local raidEvents = {}
+    local startTime = SyncEvents[raidId].epochSeconds
 
     for eventId, event in pairs(SyncEvents) do
-      if(event.type ~= bsloot.statics.eventType.RAID and bsloot:isInTimeWindow(beginTime, endTime, event.epochSeconds)) then
+      if(event.type ~= bsloot.statics.eventType.RAID and bsloot:isInTimeWindow(startTime, endTime, event.epochSeconds)) then
         local eventData = bsloot:getEventData(eventId, eventType)
         if(event.type == bsloot.statics.eventType.SWITCH_MAIN) then
           if((attendees[eventData.toChar] and attendees[eventData.toChar] ~= nil) or (attendees[eventData.fromChar] and attendees[eventData.fromChar] ~= nil)) then
@@ -4950,7 +5403,7 @@ end
           if(attendees[eventData.name] and attendees[eventData.name] ~= nil) then
             raidEvents[eventId] = SyncEvents[eventId]
           end
-        else
+        elseif(includeMiscTypes) then
           raidEvents[eventId] = SyncEvents[eventId]
         end
       end
@@ -4960,6 +5413,28 @@ end
     --better get all events between start and end by whoever started it
     --best get all events between start and end that happened to attendees
     return raidEvents
+  end
+  function bsloot:getRaidAttendees(raidId, raidEndId)
+
+    local endTime, raidEndId = bsloot:getRaidEndTime(raidId, raidEndId)
+    local attendees = {}
+    local startTime = SyncEvents[raidId].epochSeconds
+
+    for eventId, event in pairs(SyncEvents) do
+      if(
+        (event.type == bsloot.statics.eventType.EPGP or event.type == bsloot.statics.eventType.RAID)
+        and bsloot:isInTimeWindow(startTime, endTime, event.epochSeconds) 
+        and bsloot:getEventCreator(event) == bsloot:getEventCreator(SyncEvents[raidId])
+      ) then
+        local eventData = bsloot:getEventData(eventId, eventType)
+        if(eventData ~= nil) then
+          for _, char in ipairs(eventData.characters) do
+            attendees[char] = true
+          end
+        end
+      end
+    end
+    return attendees
   end
 
   bsloot.currentRaidId = "" -- TODO hmmm should i store this?
@@ -4974,8 +5449,10 @@ end
     for eventId, event in pairs(SyncEvents) do
       if(event.type == bsloot.statics.eventType.RAID and bsloot:isInTimeWindow(windowStart, windowEnd, event.epochSeconds)) then
         local eventData = bsloot:getEventData(eventId, eventType)
-        if(eventData.subType == bsloot.statics.eventSubType.RAID_START) then
-          potentials[eventId] = SyncEvents[eventId].epochSeconds
+        if(eventData ~= nil) then
+          if(eventData.subType == bsloot.statics.eventSubType.RAID_START) then
+            potentials[eventId] = SyncEvents[eventId].epochSeconds
+          end
         end
       end
     end
@@ -4983,8 +5460,8 @@ end
     local mostRecentId = nil
     for raidId, raidStartTime in pairs(potentials) do
 
-      local attendees, _, isEnded= bsloot:getRaidHighlights(raidId)
-      if(isEnded and attendees[bsloot._playerName]) then
+      local attendees, _, isEnded= bsloot:getRaidHighlights(raidId, raidEndId)
+      if(not isEnded and attendees[bsloot._playerName]) then
         if(mostRecentId == nil or raidStartTime > potentials[mostRecentId]) then
           mostRecentId = raidId
         end
@@ -5001,9 +5478,11 @@ end
         for eventId, event in pairs(SyncEvents) do
           if(event.type == bsloot.statics.eventType.RAID) then
             local eventData = bsloot:getEventData(eventId, eventType)
-            if(eventData.subType == bsloot.statics.eventSubType.RAID_END and eventData.raidId == raidStartId) then
-              raidEndId = eventId
-              break
+            if(eventData ~= nil) then
+              if(eventData.subType == bsloot.statics.eventSubType.RAID_END and eventData.raidId == raidStartId) then
+                raidEndId = eventId
+                break
+              end
             end
           end
         end
@@ -5012,7 +5491,7 @@ end
         endTime = SyncEvents[raidEndId].epochSeconds
       end
     end
-    return endTime
+    return endTime, raidEndId
   end
   function bsloot:getRaidDuration(raidStartId, raidEndId, assumeOngoing)
     local startTime = SyncEvents[raidStartId].epochSeconds
@@ -5023,29 +5502,119 @@ end
   --END raid event management
 
   -- BEGIN Item Info stuff
-  function bsloot:doWithItemInfo(item, func)
-
-    local itemId = GetItemInfoInstant(item)
-    local itemName, itemLink, itemRarity, itemLevel, itemMinLevel, itemType, itemSubType, itemStackCount,
-    itemEquipLoc, itemIcon, itemSellPrice, itemClassID, itemSubClassID, bindType, expacID, itemSetID, 
-    isCraftingReagent = GetItemInfo(itemId)
-    if (itemLink) then
-      func(itemName, itemLink, itemRarity, itemLevel, itemMinLevel, itemType, itemSubType, itemStackCount,
-        itemEquipLoc, itemIcon, itemSellPrice, itemClassID, itemSubClassID, bindType, expacID, itemSetID, 
-        isCraftingReagent, itemId)
-    else
-      local itemMixin = Item:CreateFromItemID(itemId)
-      itemMixin:ContinueOnItemLoad(function()
-        itemName, itemLink, itemRarity, itemLevel, itemMinLevel, itemType, itemSubType, itemStackCount,
-        itemEquipLoc, itemIcon, itemSellPrice, itemClassID, itemSubClassID, bindType, expacID, itemSetID, 
-        isCraftingReagent = GetItemInfo(itemId)
+  function bsloot:doWithItemInfo(originalItem, func)
+    local item = originalItem
+    if(type(item) == "string") then
+      item = strtrim(item, " \t\r\n")
+      local itemAsNumber = tonumber(item)
+      if(itemAsNumber ~= nil) then
+        item = itemAsNumber
+      end
+    end
+    local itemId, instanItemType, instanItemSubType, instanItemEquipLoc, instanIcon, instanItemClassID, instanItemSubClassID = GetItemInfoInstant(item)
+    if(itemId == nil) then
+      itemId = bsloot:findItemIdByImportedName(item)
+      bsloot:debugPrint(string.format("Finding %s by id: %s", bsloot:tableToString(item), bsloot:tableToString(itemId)), {logicOp="AND", values={bsloot.statics.LOGS.DEV, bsloot.statics.LOGS.EVENT}})
+    end
+    local success, err = pcall(function()
+      local itemName, itemLink, itemRarity, itemLevel, itemMinLevel, itemType, itemSubType, itemStackCount,
+      itemEquipLoc, itemIcon, itemSellPrice, itemClassID, itemSubClassID, bindType, expacID, itemSetID, 
+      isCraftingReagent = GetItemInfo(itemId)
+      if (itemLink) then
         func(itemName, itemLink, itemRarity, itemLevel, itemMinLevel, itemType, itemSubType, itemStackCount,
-        itemEquipLoc, itemIcon, itemSellPrice, itemClassID, itemSubClassID, bindType, expacID, itemSetID, 
-        isCraftingReagent, itemId)
-      end)
+          itemEquipLoc, itemIcon, itemSellPrice, itemClassID, itemSubClassID, bindType, expacID, itemSetID, 
+          isCraftingReagent, itemId)
+      else
+        local itemMixin = Item:CreateFromItemID(itemId)
+        itemMixin:ContinueOnItemLoad(function()
+          itemName, itemLink, itemRarity, itemLevel, itemMinLevel, itemType, itemSubType, itemStackCount,
+          itemEquipLoc, itemIcon, itemSellPrice, itemClassID, itemSubClassID, bindType, expacID, itemSetID, 
+          isCraftingReagent = GetItemInfo(itemId)
+          func(itemName, itemLink, itemRarity, itemLevel, itemMinLevel, itemType, itemSubType, itemStackCount,
+          itemEquipLoc, itemIcon, itemSellPrice, itemClassID, itemSubClassID, bindType, expacID, itemSetID, 
+          isCraftingReagent, itemId)
+        end)
+      end
+    end)
+    if(not success) then
+      bsloot:warnPrint(string.format("Failed to load item \"%s\" due to %s", originalItem, err), bsloot.statics.LOGS.DEV)
+    end
+  end
+  function bsloot:tablelength(t)
+    local count = 0
+    for _ in pairs(t) do
+      count = count + 1
+    end
+    return count
+  end
+  function bsloot:getQDepth(q)
+    return q.last-q.first+1
+  end
+  function bsloot:isQEmpty(q)
+    return q.first > q.last
+  end
+  function bsloot:qAdd(q, value)
+    local last = q.last + 1
+    q.last = last
+    q[last] = value
+    return last
+  end
+  function bsloot:qPop(q)
+    local first = q.first
+    if(first > q.last) then 
+      return
+    end
+    local value = q[first]
+    q[first] = nil
+    q.first = first + 1
+    if(bsloot:isQEmpty(q)) then
+      bsloot:rsetQ(q)
+    end
+    return value
+  end
+  function bsloot:rsetQ(q)
+    table.wipe(q)
+    q.first = 0
+    q.last = -1
+  end
+  function bsloot:isGuildMemberOnline(chackName)
+    local isOnline = false
+    chackName = Ambiguate(chackName,"short")
+    local numGuildMembers = GetNumGuildMembers(true)
+    for i = 1, numGuildMembers do
+      local name, rank, rankIndex, level, class, zone, note, officernote, online, status, classFileName, 
+      achievementPoints, achievementRank, isMobile, isSoREligible, standingID = GetGuildRosterInfo(i)
+      local member_name = Ambiguate(name,"short")
+      if(member_name == chackName) then 
+        isOnline = online
+        break
+      end
+    end
+    return isOnline
+  end
+
+  function bsloot:getEventCreator(event)
+    return event.creator or "Murach"
+  end
+  function bsloot:getDateTimeString(epochSeconds)
+    return date("%Y.%m.%d %H:%M:%S", epochSeconds)
+  end
+  function bsloot:findItemIdByImportedName(itemName)
+    for itemKey, item in pairs(ItemGPCost) do
+      if(item.importedName and item.importedName ~= nil and item.importedName == itemName) then
+        local itemId = GetItemInfoInstant(item.link)
+        return itemId
+      end
+    
     end
   end
 
+  function bsloot:getRaidSize(raidLoc)
+    if(raidLoc == "ZG" or raidLoc == "AQ20") then
+      return 20
+    end
+    return 40
+  end
   -- END
   
   _G[addonName] = bsloot

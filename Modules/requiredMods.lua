@@ -164,11 +164,11 @@ function bsloot_requiredmods:buildColEntry(class, responseForMod, modName)
       if (ex == modName) then
         colEntry.color = bsloot_requiredmods.colors.missingok
       else
-        -- bsloot:debugPrint("Exception doesn't match: ".. ex .. "~="..modName, 2)
+        bsloot:debugPrint("Exception doesn't match: ".. ex .. "~="..modName, {logicOp="AND", values={bsloot.statics.LOGS.DEV, bsloot.statics.LOGS.MODS}})
       end
     end
   elseif(not bsloot.requiredModsExceptions[class] or bsloot.requiredModsExceptions[class] == nil) then
-    bsloot:debugPrint("Class not found for exception: ".. class, 2)
+    bsloot:debugPrint("Class not found for exception: ".. class, bsloot.statics.LOGS.MODS)
   end
   return colEntry
 end
