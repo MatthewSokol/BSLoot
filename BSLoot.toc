@@ -1,10 +1,10 @@
 ## Interface:11303
 ## Title: BS Loot
 ## Author: Murach
-## Version: 0.0.4-alpha
+## Version: 1.0.0
 ## X-Website: https://www.bloodseraphim.com
 ## Notes: Handles the loot system of Blood Seraphim.
-## SavedVariables: BSLootDB, EPGPTable, ItemGPCost, EPGPCache, CharRoleDB, SyncEvents, Baseline, EPValues, BisMatrix, BossKillCounter, RaidHistory, EventsToProcessQueue
+## SavedVariables: BSLootDB, EPGPTable, ItemGPCost, EPGPCache, CharRoleDB, SyncEvents, Baseline, EPValues, BisMatrix, BossKillCounter, RaidHistory, EventsToProcessQueue, InboundSyncQueue
 
 Libs\libs.xml
 Locales\locales.xml
@@ -29,5 +29,6 @@ Modules\wBulkEp.lua
 Modules\wBulkChars.lua
 Modules\wRosterDetails.lua
 Modules\wBisMatrix.lua
+Modules\wRaidHistory.lua
 Modules\baseline.lua
 

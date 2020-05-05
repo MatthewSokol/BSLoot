@@ -57,25 +57,47 @@ local item_onleave = function(rowFrame, cellFrame, data, cols, row, realrow, col
   end
 end
 
+local function st_sorter_itemName(st,rowa,rowb,col)
+  local cella = st.data[rowa].cols[col].value
+  local cellb = st.data[rowb].cols[col].value
+  local sort = st.cols[col].sort or st.cols[col].defaultsort
+  
+  if cella == cellb then
+    local sortnext = st.cols[col].sortnext
+    if sortnext then
+      return st.data[rowa].cols[sortnext].value < st.data[rowb].cols[sortnext].value
+    end
+  else
+    local itemNameA = GetItemInfo(cella)
+    local itemNameB = GetItemInfo(cellb)
+    if sort == ST.SORT_DSC then
+      return itemNameA > itemNameB
+    else
+      return itemNameA < itemNameB
+    end
+  end
+end
+
 function bsloot_bismatrix:OnEnable()
   local container = GUI:Create("Window")
   container:SetTitle(L["BSLoot Browser"])
   container:SetWidth(1700)
-  container:SetHeight(290)
+  container:SetHeight(300)
   container:EnableResize(false)
   container:SetLayout("List")
   container:Hide()
-  local BASE_COL_WIDTH = 80
+  local BASE_COL_WIDTH = 75
   self._container = container
   local headers = {
-    {["name"]=C:Orange(_G.ITEMS),["width"]=150,["sort"]=ST.SORT_ASC}, --name
+    {["name"]=C:Orange(_G.ITEMS),["width"]=150,["comparesort"]=st_sorter_itemName,["sort"]=ST.SORT_ASC}, --name
     {["name"]=C:Orange(L["Base GP"]),["width"]=80}, --base_gp
-    {["name"]=C:Orange(L["Raid"]),["width"]=60,}, --raid
+    {["name"]=C:Orange(L["Raid"]),["width"]=45,}, --raid
     {["name"]=C:Orange(L["Warrior Tank"]),["width"]=BASE_COL_WIDTH}, -- 
     {["name"]=C:Orange(L["Warrior OT"]),["width"]=BASE_COL_WIDTH},
+    {["name"]=C:Orange(L["Warrior MDPS"]),["width"]=BASE_COL_WIDTH},
     {["name"]=C:Orange(L["Hunter RDPS"]),["width"]=BASE_COL_WIDTH}, 
-    {["name"]=C:Orange(L["Shaman Healer"]),["width"]=BASE_COL_WIDTH}, 
-    {["name"]=C:Orange(L["Shaman MDPS"]),["width"]=BASE_COL_WIDTH}, 
+    {["name"]=C:Orange(L["Shaman Healer"]),["width"]=BASE_COL_WIDTH+10}, 
+    {["name"]=C:Orange(L["Shaman MDPS"]),["width"]=BASE_COL_WIDTH+5}, 
     {["name"]=C:Orange(L["Shaman RDPS"]),["width"]=BASE_COL_WIDTH}, 
     {["name"]=C:Orange(L["Druid Tank"]),["width"]=BASE_COL_WIDTH}, 
     {["name"]=C:Orange(L["Druid MDPS"]),["width"]=BASE_COL_WIDTH}, 
@@ -224,7 +246,7 @@ function bsloot_bismatrix:populate_subset(subset, activeRaidFilters, subdata)
         isCraftingReagent, itemId) 
       
         local entryId = bsloot:buildEpGpEventReasonKey(bsloot.statics.eventType.BIS_MATRIX, bsloot.statics.EPGP.LOOT, itemId)
-        bsloot_bismatrix:populate(subdata, itemLink,basePrice,raid, ItemGPCost[entryId].bisThrough)
+        bsloot_bismatrix:populate(subdata, itemLink,basePrice,raid, BisMatrix[entryId].bisThrough)
         
       end)
 
@@ -250,24 +272,26 @@ function bsloot_bismatrix:ReInit()
   locsorted = {"ANY", "Unknown", "INVTYPE_HEAD", "INVTYPE_NECK", "INVTYPE_SHOULDER", "INVTYPE_CHEST", "INVTYPE_ROBE", "INVTYPE_WAIST", "INVTYPE_LEGS", "INVTYPE_FEET", "INVTYPE_WRIST", "INVTYPE_HAND", "INVTYPE_FINGER", "INVTYPE_TRINKET", "INVTYPE_CLOAK", "INVTYPE_WEAPON", "INVTYPE_SHIELD", "INVTYPE_2HWEAPON", "INVTYPE_WEAPONMAINHAND", "INVTYPE_WEAPONOFFHAND", "INVTYPE_HOLDABLE", "INVTYPE_RANGED", "INVTYPE_THROWN", "INVTYPE_RANGEDRIGHT", "INVTYPE_RELIC"}
 
   local count = 0
-  for _,info in pairs(ItemGPCost) do
+  for key,info in pairs(ItemGPCost) do
     local raid = info.raid
     if(not raid or raid == nil) then raid = "Unknown" end
     local itemID, itemType, itemSubType, itemEquipLoc, icon, itemClassID, itemSubClassID = GetItemInfoInstant(info.link)
-    local _, basePrice = bsloot_prices:GetPrice(itemID,bsloot._playerName)
-    if not itemEquipLoc or itemEquipLoc == nil or itemEquipLoc == "" then itemEquipLoc = "Unknown" end
-    if itemEquipLoc == "INVTYPE_ROBE" then itemEquipLoc = "INVTYPE_CHEST" end
-    data[itemEquipLoc] = data[itemEquipLoc] or {}
-    table.insert(data[itemEquipLoc],{itemID,basePrice,raid})
-    local equipLocDesc = _G[itemEquipLoc]
-    if itemEquipLoc == "INVTYPE_SHIELD" then equipLocDesc = _G["SHIELDSLOT"] end
-    if itemEquipLoc == "MISC" then equipLocDesc = L["Miscellaneous"] end
-    if itemEquipLoc == "Unknown" then equipLocDesc = L["Unknown"] end
-    if itemEquipLoc == "INVTYPE_RANGEDRIGHT" then equipLocDesc = _G["INVTYPE_RANGED"].."2" end
-    slotfilterOptions[itemEquipLoc] = equipLocDesc
-    count = count+1
+    pcall(function()
+      local _, basePrice = bsloot_prices:GetPrice(itemID,bsloot._playerName)
+      if not itemEquipLoc or itemEquipLoc == nil or itemEquipLoc == "" then itemEquipLoc = "Unknown" end
+      if itemEquipLoc == "INVTYPE_ROBE" then itemEquipLoc = "INVTYPE_CHEST" end
+      data[itemEquipLoc] = data[itemEquipLoc] or {}
+      table.insert(data[itemEquipLoc],{itemID,basePrice,raid})
+      local equipLocDesc = _G[itemEquipLoc]
+      if itemEquipLoc == "INVTYPE_SHIELD" then equipLocDesc = _G["SHIELDSLOT"] end
+      if itemEquipLoc == "MISC" then equipLocDesc = L["Miscellaneous"] end
+      if itemEquipLoc == "Unknown" then equipLocDesc = L["Unknown"] end
+      if itemEquipLoc == "INVTYPE_RANGEDRIGHT" then equipLocDesc = _G["INVTYPE_RANGED"].."2" end
+      slotfilterOptions[itemEquipLoc] = equipLocDesc
+      count = count+1
+    end)
   end
-  bsloot:debugPrint("Loaded "..count.." items into the bis matrix browser",2)
+  bsloot:debugPrint("Loaded "..count.." items into the bis matrix browser", bsloot.statics.LOGS.LOOT)
   for i=#(locsorted),1,-1 do
     local loc = locsorted[i]
     if loc ~= "_AUTO_ROLL" and loc ~= "_AUTO_PASS" and loc ~= "ANY" and slotfilterOptions[loc]==nil then

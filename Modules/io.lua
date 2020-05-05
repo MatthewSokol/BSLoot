@@ -17,7 +17,7 @@ function bsloot_io:OnEnable()
     if loaded then
       BSLootExport = BSLootExport or {}
       self._fileexport = BSLootExport
-      bsloot:debugPrint(L["BSLoot will be saving to file in `\\WTF\\Account\\<ACCOUNT>\\SavedVariables\\BSLoot_Export.lua`"], 2)
+      bsloot:debugPrint(L["BSLoot will be saving to file in `\\WTF\\Account\\<ACCOUNT>\\SavedVariables\\BSLoot_Export.lua`"], bsloot.statics.LOGS.DEV)
     end
   end
 end
